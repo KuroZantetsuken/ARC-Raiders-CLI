@@ -130,24 +130,34 @@ function Get-WrappedText {
     if (-not $Text) { return @() }
     
     $Lines = @()
-    $Words = $Text -split ' '
+    # Sanitize newlines to ensure clean wrapping
+    $CleanText = $Text -replace "`r`n", " " -replace "`n", " "
+    $Words = $CleanText -split ' '
     $CurrentLine = ""
     
     foreach ($Word in $Words) {
-        $SpaceLen = if ($CurrentLine.Length -gt 0) { 1 } else { 0 }
-        if (($CurrentLine.Length + $SpaceLen + $Word.Length) -le $Width) {
+        if ([string]::IsNullOrWhiteSpace($Word)) { continue }
+        
+        # Calculate length (ignoring ANSI for safety if mixed, though normally text is plain here)
+        $WordLen = (Get-DisplayLength $Word)
+        $LineLen = (Get-DisplayLength $CurrentLine)
+        $SpaceLen = if ($LineLen -gt 0) { 1 } else { 0 }
+        
+        if (($LineLen + $SpaceLen + $WordLen) -le $Width) {
             if ($SpaceLen -eq 1) { $CurrentLine += " " }
             $CurrentLine += $Word
         } else {
-            if ($CurrentLine.Length -gt 0) { $Lines += ($Indent + $CurrentLine) }
+            if ($LineLen -gt 0) { $Lines += ($Indent + $CurrentLine) }
             $CurrentLine = $Word
-            while ($CurrentLine.Length -gt $Width) {
+            
+            # Force split very long words
+            while ((Get-DisplayLength $CurrentLine) -gt $Width) {
                 $Lines += ($Indent + $CurrentLine.Substring(0, $Width))
                 $CurrentLine = $CurrentLine.Substring($Width)
             }
         }
     }
-    if ($CurrentLine.Length -gt 0) { $Lines += ($Indent + $CurrentLine) }
+    if ((Get-DisplayLength $CurrentLine) -gt 0) { $Lines += ($Indent + $CurrentLine) }
     
     return $Lines
 }
@@ -350,7 +360,7 @@ function Show-Item {
     $Lines += ($Indent + "$Badge1 $Badge2")
     
     # Name
-    $Lines += ($Indent + $Item.name.en.ToUpper())
+    $Lines += (Get-WrappedText -Text ($Item.name.en.ToUpper()) -Indent $Indent)
     
     # Description
     if ($Item.description.en) {
@@ -384,7 +394,8 @@ function Show-Item {
         $Lines += ($Indent + "Recipe:")
         $Cost = 0
         $Item.recipe.PSObject.Properties | ForEach-Object { 
-            $Lines += ($Indent + " - $($_.Value)x $(Get-ItemName $_.Name)")
+            $RecLine = " - $($_.Value)x $(Get-ItemName $_.Name)"
+            $Lines += (Get-WrappedText $RecLine -Indent $Indent)
             $Cost += ($_.Value * (Get-ItemValue $_.Name)) 
         }
         
@@ -878,7 +889,15 @@ if ($Results.Count -eq 0) {
         "Quest"   { 
             $Q = $T.Data
             $C = @("TRADER: $($Q.trader)", "---")
-            if ($Q.objectives) { $C += "OBJECTIVES:"; foreach($o in $Q.objectives){if($o.en){$C+=" [ ] $($o.en)"}} }
+            if ($Q.objectives) { 
+                $C += "OBJECTIVES:"
+                foreach($o in $Q.objectives){
+                    if($o.en){
+                        $Obj = "[ ] $($o.en)"
+                        $C += (Get-WrappedText $Obj -Indent " ")
+                    }
+                } 
+            }
             Show-Card -Title $Q.name.en -Subtitle "Quest" -Content $C -ThemeColor $Palette.Accent
         }
         "Hideout" {
@@ -922,7 +941,15 @@ if ($Results.Count -eq 0) {
             "Quest"   { 
                 $Q = $T.Data
                 $C = @("TRADER: $($Q.trader)", "---")
-                if ($Q.objectives) { $C += "OBJECTIVES:"; foreach($o in $Q.objectives){if($o.en){$C+=" [ ] $($o.en)"}} }
+                if ($Q.objectives) { 
+                    $C += "OBJECTIVES:"
+                    foreach($o in $Q.objectives){
+                        if($o.en){
+                            $Obj = "[ ] $($o.en)"
+                            $C += (Get-WrappedText $Obj -Indent " ")
+                        }
+                    } 
+                }
                 Show-Card -Title $Q.name.en -Subtitle "Quest" -Content $C -ThemeColor $Palette.Accent
             }
             "Hideout" {
