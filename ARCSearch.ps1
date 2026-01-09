@@ -391,7 +391,7 @@ function Show-Item {
     # Crafting
     if ($Item.recipe) {
         $Lines += "---"
-        $Lines += ($Indent + "Recipe:")
+        $Lines += ($Indent + "RECIPE:")
         $Cost = 0
         $Item.recipe.PSObject.Properties | ForEach-Object { 
             $RecLine = " - $($_.Value)x $(Get-ItemName $_.Name)"
@@ -403,7 +403,7 @@ function Show-Item {
         $ProfitDiff = $Val - $Cost
         $DiffStr = Format-DiffString -Value $ProfitDiff -InvertColors $false
         
-        $Lines += ($Indent + "Cost: $($Sym.Currency) $Cost $DiffStr")
+        $Lines += ($Indent + "COST: $($Sym.Currency) $Cost $DiffStr")
 
         $Delta = Get-StashSpaceDelta -Item $Item
         if ($null -ne $Delta) {
@@ -411,18 +411,18 @@ function Show-Item {
             # Delta > 0 (More space) is Bad (Red). Delta < 0 (Less space) is Good (Green).
             $Msg = ""
             if ($Delta -gt 0) {
-                $Msg = "Space: $Esc[$($Palette.Error)m$DeltaVal$Esc[0m more slots"
+                $Msg = "SPACE: $Esc[$($Palette.Error)m$DeltaVal$Esc[0m more slots"
             } elseif ($Delta -lt 0) {
-                $Msg = "Space: $Esc[$($Palette.Success)m$DeltaVal$Esc[0m slots"
+                $Msg = "SPACE: $Esc[$($Palette.Success)m$DeltaVal$Esc[0m slots"
             } else {
-                $Msg = "Space: 0 slots"
+                $Msg = "SPACE: 0 slots"
             }
             $Lines += ($Indent + $Msg)
         }
     }
     
     # Recycling
-    $ProcessTypes = @{ "recyclesInto" = "Recycles Into"; "salvagesInto" = "Salvages Into" }
+    $ProcessTypes = @{ "recyclesInto" = "RECYCLES INTO"; "salvagesInto" = "SALVAGES INTO" }
     foreach ($Key in $ProcessTypes.Keys) {
         if ($Item.$Key -and $Item.$Key.PSObject.Properties.Count -gt 0) {
             $Lines += "---"
@@ -437,7 +437,7 @@ function Show-Item {
             $RecycDiff = $PVal - $Val
             $DiffStr = Format-DiffString -Value $RecycDiff -InvertColors $false
             
-            $Lines += ($Indent + "Value: $($Sym.Currency) $PVal $DiffStr")
+            $Lines += ($Indent + "VALUE: $($Sym.Currency) $PVal $DiffStr")
         }
     }
 
@@ -450,7 +450,7 @@ function Show-Item {
         $MarketValue = if ($CoinTrade) { $CoinTrade.cost.quantity } else { $null }
         
         $Lines += "---"
-        $Lines += ($Indent + "Sold By:")
+        $Lines += ($Indent + "SOLD BY:")
         foreach ($Trade in $ItemTrades) {
             $Trader = $Trade.trader
             $LimitStr = if ($Trade.dailyLimit) { "$($Trade.dailyLimit)x " } else { "" }
@@ -462,14 +462,14 @@ function Show-Item {
             if ($CostId -eq "coins") {
                 $Diff = $CostQty - $Val
                 $DiffStr = Format-DiffString -Value $Diff -InvertColors $true
-                $Lines += ($Indent + "Price: $($Sym.Currency) $CostQty $DiffStr")
+                $Lines += ($Indent + "PRICE: $($Sym.Currency) $CostQty $DiffStr")
             } elseif ($CostId -eq "creds") {
                 $ExchStr = ""
                 if ($MarketValue) {
                     $Rate = [math]::Round($MarketValue / $CostQty, 2)
                     $ExchStr = "($($Sym.Creds) 1 = $($Sym.Currency) $Rate)"
                 }
-                $Lines += ($Indent + "Price: $($Sym.Creds) $CostQty $ExchStr")
+                $Lines += ($Indent + "PRICE: $($Sym.Creds) $CostQty $ExchStr")
             } else {
                 # Barter
                 $CostItemVal = Get-ItemValue $CostId
@@ -484,7 +484,7 @@ function Show-Item {
                 
                 $DiffDisplay = "($($Sym.Currency) $Esc[${Color}m$Sign$Diff$Esc[0m)"
                 $CostName = Get-ItemName $CostId
-                $Lines += ($Indent + "Price: ${CostQty}x $CostName $DiffDisplay")
+                $Lines += ($Indent + "PRICE: ${CostQty}x $CostName $DiffDisplay")
             }
         }
     }
@@ -560,7 +560,7 @@ function Show-Project {
             }
             
             if ($Phase.requirementItemIds) {
-                $Lines += ($Indent + "Requirements:")
+                $Lines += ($Indent + "REQUIREMENTS:")
                 foreach ($Req in $Phase.requirementItemIds) {
                     $Lines += ($Indent + " - $($Req.quantity)x $(Get-ItemName $Req.itemId)")
                 }
@@ -591,10 +591,10 @@ function Show-Skill {
     
     $Lines += "---"
     if ($Skill.impactedSkill.en) {
-        $Lines += ($Indent + "Impacts: $($Skill.impactedSkill.en)")
+        $Lines += ($Indent + "IMPACTS: $($Skill.impactedSkill.en)")
     }
     if ($Skill.maxPoints) {
-        $Lines += ($Indent + "Max Points: $($Skill.maxPoints)")
+        $Lines += ($Indent + "MAX POINTS: $($Skill.maxPoints)")
     }
     
     Show-Card -Title $null -Content $Lines -ThemeColor $Palette.Accent
