@@ -4,8 +4,8 @@ This utility helps players of ARC Raiders optimize their stash space and quickly
 
 ## Features
 
-- **Stash Savings Calculation**: Automatically calculates the net stash space gained or lost by crafting items.
-- **Universal Search**: Quickly find Items, Quests, and Hideouts using `ARCSearch`.
+- **Stash Savings Calculation**: Automatically calculates the net stash space gained or lost by crafting items (on-the-fly).
+- **Universal Search**: Quickly find Items, Bots, Projects, Skills, Trades, Quests, and Hideouts using `ARCSearch`.
 - **Event Schedule**: View active and upcoming map events converted to your local time.
 - **Interactive CLI**: Fast result selection designed for quick access while playing.
 
@@ -22,20 +22,17 @@ This utility helps players of ARC Raiders optimize their stash space and quickly
     git submodule update --init --recursive
     ```
 
-3.  **Run Calculation Script**:
-    ```bash
-    python scripts/calculate_savings.py
+3.  **Run the Tool**:
+    ```powershell
+    .\ARCSearch.ps1 "Herbal Bandage"
     ```
-
-4.  **Add to PATH (Recommended)**:
-    Add the `scripts` folder to your System PATH to use `ARCSearch` from anywhere (e.g., PowerToys Run).
 
 ## Usage
 
 ### Search Items, Quests, Hideouts
 
 ```powershell
-ARCSearch "Herbal Bandage"
+.\ARCSearch.ps1 "Herbal Bandage"
 ```
 
 If multiple results are found, simply press the corresponding number key (0-9) to select instantly.
@@ -43,19 +40,18 @@ If multiple results are found, simply press the corresponding number key (0-9) t
 ### Check Event Schedule
 
 ```powershell
-ARCSearch events
+.\ARCSearch.ps1 events
 ```
 Displays current and next major/minor events for all maps in your local time.
 
 ### Examples
 
-- `ARCSearch scrappy` -> Shows Scrappy hideout upgrades.
-- `ARCSearch "down to earth"` -> Shows quest objectives and rewards.
-- `ARCSearch heavy` -> Lists Heavy Ammo, Heavy Shield, etc.
+- `.\ARCSearch.ps1 scrappy` -> Shows Scrappy hideout upgrades.
+- `.\ARCSearch.ps1 "down to earth"` -> Shows quest objectives and rewards.
+- `.\ARCSearch.ps1 heavy` -> Lists Heavy Ammo, Heavy Shield, etc.
+- `.\ARCSearch.ps1 celeste` -> Shows info about Celeste (Trader) or Celeste's Journal (Item).
 
 ## Project Structure
 
-- `arcraiders-data`: Submodule containing original game data.
-- `data/items`: Generated data with `stashSavings` added.
-- `scripts/calculate_savings.py`: Python script for processing data.
-- `scripts/ARCSearch.ps1`: The main CLI tool.
+- `arcraiders-data`: Submodule containing game data.
+- `ARCSearch.ps1`: The main CLI tool with built-in stash optimizer logic.
