@@ -2,6 +2,8 @@
 
 A lightweight, fast, and intuitive CLI tool for **ARC Raiders**. Quickly look up items, crafting recipes, quest objectives, and check the live map event schedule directly from your terminal.
 
+![Demo Video](.assets/demo.webp)
+
 ## Features
 
 *   **Smart Search**: Look up Items, ARCs, Quests, and more with simple key words.
@@ -14,42 +16,23 @@ A lightweight, fast, and intuitive CLI tool for **ARC Raiders**. Quickly look up
 *   **Trade Profit**: Shows if a trade is profitable based on market values.
 *   **Rich UI**: Pleasant terminal output with colors, badges, and card-based layouts.
 
-## Quick Start (Windows)
+## Installation
 
+### Option 1: Quick Download (Recommended)
+1.  **Download the latest release**: [arc-raiders-cli.zip](https://github.com/KuroZantetsuken/ARC-Raiders-Data-CLI/releases/latest/download/arc-raiders-cli.zip)
+2.  **Extract** the ZIP to a folder of your choice.
+3.  **Run Setup**:
+    *   Right-click `Setup.ps1` and select **Run with PowerShell**, or run `.\Setup.ps1` in a terminal.
+    *   This adds the tool to your `PATH` and creates the `arc` command.
+4.  **Restart Terminal**: Close and reopen your terminal.
+
+### Option 2: Developers (Git)
 1.  **Clone the Repo**:
     ```powershell
-    git clone https://github.com/KuroZantetsuken/ARC-Raiders-Data-CLI.git
+    git clone --recursive https://github.com/KuroZantetsuken/ARC-Raiders-Data-CLI.git
     cd ARC-Raiders-Data-CLI
     ```
-
-2.  **Run Setup**:
-    ```powershell
-    .\Setup.ps1
-    ```
-    *   Downloads the game data automatically.
-    *   Adds the tool to your system `PATH`.
-    *   Creates the `arc` shortcut command.
-
-3.  **Restart Terminal**: Close and reopen your terminal.
-
-4.  **You're Ready!**:
-    ```powershell
-    arc herbal     # Search for "Herbal Bandage"
-    arc events     # See the map schedule
-    ```
-
-## Manual Setup (No Git)
-If you do not have Git installed, you can still use this tool:
-
-1.  **Download ZIPs**:
-    *   Download this repo as a ZIP and extract it.
-    *   Go to [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) and download it as a ZIP.
-2.  **Place Data**:
-    *   Extract the data ZIP into the `arcraiders-data` folder inside your `ARC-Raiders-Data-CLI` folder.
-    *   *Important*: Ensure the folder is named exactly `arcraiders-data` and contains the `items` folder directly inside.
-3.  **Run Setup**:
-    *   Double-click `Setup.ps1` or run it in a terminal.
-    *   It will detect the data is already there and skip the git download.
+2.  **Run Setup**: `.\Setup.ps1`
 
 ## Usage Guide
 
@@ -109,6 +92,10 @@ To cleanly remove the tool and all system changes:
 *   Removes the folder from your `PATH`.
 *   Deletes the `arc` alias.
 *   You can then safely delete the project folder.
+
+## Credits & Attribution
+This tool uses game data provided by the [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) project.
+Special thanks to the team at [arctracker.io](https://arctracker.io) for their work in compiling and maintaining this resource.
 
 ## Project Structure
 *   `ARCSearch.ps1`: The core PowerShell engine.

@@ -1,0 +1,79 @@
+name: Build Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare Package
+        run: |
+          mkdir release
+          cp ARCSearch.ps1 release/
+          cp Setup.ps1 release/
+          cp README.md release/
+          
+          # Recreate arc.bat in the package
+          echo "@echo off" > release/arc.bat
+          echo "powershell -ExecutionPolicy Bypass -File \"%~dp0ARCSearch.ps1\" %*" >> release/arc.bat
+          
+          # Copy JSON data and LICENSE from submodule
+          mkdir -p release/arcraiders-data
+          cp arcraiders-data/LICENSE release/arcraiders-data/
+          cp arcraiders-data/README.md release/arcraiders-data/
+          
+          cd arcraiders-data
+          find . -name "*.json" -exec cp --parents \{\} ../release/arcraiders-data/ \;
+          cd ..
+          
+          # Zip it up
+          cd release
+          zip -r ../arc-raiders-cli.zip .
+          cd ..
+
+      - name: Update Latest Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest
+          name: Latest Build
+          body: |
+            Automated build from the latest `main` branch.
+            Includes core CLI tool and current JSON game data.
+            
+            **Attribution**:
+            Data provided by [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) and [arctracker.io](https://arctracker.io).
+          files: arc-raiders-cli.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Tagged Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.ref_name }}
+          body: |
+            Official Release ${{ github.ref_name }}
+            
+            **Attribution**:
+            Data provided by [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) and [arctracker.io](https://arctracker.io).
+          files: arc-raiders-cli.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
