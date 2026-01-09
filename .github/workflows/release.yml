@@ -52,9 +52,30 @@ jobs:
           zip -r ../arc-raiders-cli.zip .
           cd ..
 
-      - name: Get Last Commit Message
-        id: last_commit
-        run: echo "message=$(git log -1 --pretty=%s)" >> $GITHUB_OUTPUT
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          # Get the latest tag
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LATEST_TAG" ]; then
+            # No tags found, get all commits
+            CHANGELOG=$(git log --pretty=format:"* %s (%h)" --no-merges)
+          else
+            # Get commits since the latest tag
+            CHANGELOG=$(git log ${LATEST_TAG}..HEAD --pretty=format:"* %s (%h)" --no-merges)
+          fi
+          
+          # If changelog is empty (e.g. we are on the tag itself), fallback to last commit
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG=$(git log -1 --pretty=format:"* %s (%h)")
+          fi
+
+          # Escape for GitHub Actions output (handling newlines)
+          # Use a heredoc for multiline output to GITHUB_OUTPUT
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Create Versioned Release
         if: github.ref == 'refs/heads/main'
@@ -63,7 +84,8 @@ jobs:
           tag_name: v${{ github.run_number }}
           name: Build v${{ github.run_number }}
           body: |
-            ${{ steps.last_commit.outputs.message }}
+            ### Changes since last build:
+            ${{ steps.changelog.outputs.changelog }}
             
             Automated build containing the core CLI tool and current JSON game data.
             
@@ -81,7 +103,8 @@ jobs:
         with:
           name: Release ${{ github.ref_name }}
           body: |
-            ${{ steps.last_commit.outputs.message }}
+            ### Changes:
+            ${{ steps.changelog.outputs.changelog }}
             
             Automated build containing the core CLI tool and current JSON game data.
             
