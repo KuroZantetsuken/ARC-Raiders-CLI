@@ -911,7 +911,15 @@ if ($Results.Count -eq 0) {
         "Hideout" {
             $H = $T.Data
             $C = @("UPGRADES:")
-            foreach($L in $H.levels){ $C+=" Level $($L.level)" } 
+            foreach($L in $H.levels){ 
+                $C += "---"
+                $C += " Level $($L.level)" 
+                if ($L.requirementItemIds) {
+                    foreach ($Req in $L.requirementItemIds) {
+                        $C += "  - $($Req.quantity)x $(Get-ItemName $Req.itemId)"
+                    }
+                }
+            } 
             Show-Card -Title $H.name.en -Subtitle "Hideout" -Content $C -ThemeColor $Palette.Accent
         }
     }
@@ -963,7 +971,15 @@ if ($Results.Count -eq 0) {
             "Hideout" {
                 $H = $T.Data
                 $C = @("UPGRADES:")
-                foreach($L in $H.levels){ $C+=" Level $($L.level)" }
+                foreach($L in $H.levels){ 
+                    $C += "---"
+                    $C += " Level $($L.level)" 
+                    if ($L.requirementItemIds) {
+                        foreach ($Req in $L.requirementItemIds) {
+                            $C += "  - $($Req.quantity)x $(Get-ItemName $Req.itemId)"
+                        }
+                    }
+                }
                 Show-Card -Title $H.name.en -Subtitle "Hideout" -Content $C -ThemeColor $Palette.Accent
             }
         }
