@@ -346,51 +346,122 @@ function Update-ArcRaidersCLI {
 
 $Global:Data = @{
     Items    = @{}
+    Quests   = @()
+    Hideout  = @()
     Bots     = @()
     Projects = @()
     Skills   = @()
     Trades   = @()
 }
 $Global:DataLoaded = $false
+$CacheFile = Join-Path $RepoRoot ".data-cache.json"
 
 function Initialize-Data {
     if ($Global:DataLoaded) { return }
-    
-    # 1. Items
-    if (Test-Path $PathItems) {
-        $Files = [System.IO.Directory]::GetFiles($PathItems, "*.json")
-        foreach ($File in $Files) {
-            $Json = Import-JsonFast $File
-            if ($Json) { $Global:Data.Items[$Json.id] = $Json }
+
+    # Check Cache Validity
+    $NeedsRebuild = $true
+    if (Test-Path $CacheFile) {
+        $CacheTime = (Get-Item $CacheFile).LastWriteTime
+        
+        # Fast check: only check the directories themselves first
+        $DataDirs = @($PathItems, $PathQuests, $PathHideout)
+        $NeedsRebuild = $false
+        foreach ($Dir in $DataDirs) {
+            if (Test-Path $Dir) {
+                if ((Get-Item $Dir).LastWriteTime -gt $CacheTime) {
+                    $NeedsRebuild = $true
+                    break
+                }
+            }
+        }
+        
+        # If directories look okay, we trust the cache (avoids recursive file scan)
+        if (-not $NeedsRebuild) {
+            try {
+                $Loaded = Import-JsonFast $CacheFile
+                if ($Loaded -and $Loaded.Items) {
+                    $Global:Data = $Loaded
+                    $Global:DataLoaded = $true
+                } else {
+                    $NeedsRebuild = $true
+                }
+            } catch {
+                $NeedsRebuild = $true
+            }
         }
     }
 
-    # 2. Other Data
-    if (Test-Path $PathBots)     { $Global:Data.Bots     = Import-JsonFast $PathBots }
-    if (Test-Path $PathProjects) { $Global:Data.Projects = Import-JsonFast $PathProjects }
-    if (Test-Path $PathSkills)   { $Global:Data.Skills   = Import-JsonFast $PathSkills }
-    if (Test-Path $PathTrades)   { $Global:Data.Trades   = Import-JsonFast $PathTrades }
+    if ($NeedsRebuild) {
+        $Global:Data = @{
+            Items    = @{}
+            Quests   = @()
+            Hideout  = @()
+            Bots     = @()
+            Projects = @()
+            Skills   = @()
+            Trades   = @()
+        }
+        # 1. Items
+        if (Test-Path $PathItems) {
+            $Files = [System.IO.Directory]::GetFiles($PathItems, "*.json")
+            foreach ($File in $Files) {
+                $Json = Import-JsonFast $File
+                if ($Json) { $Global:Data.Items[$Json.id] = $Json }
+            }
+        }
 
-    $Global:DataLoaded = $true
+        # 2. Quests
+        if (Test-Path $PathQuests) {
+            Get-ChildItem $PathQuests "*.json" | ForEach-Object {
+                $J = Import-JsonFast $_.FullName
+                if ($J) { $Global:Data.Quests += $J }
+            }
+        }
+
+        # 3. Hideout
+        if (Test-Path $PathHideout) {
+            Get-ChildItem $PathHideout "*.json" | ForEach-Object {
+                $J = Import-JsonFast $_.FullName
+                if ($J) { $Global:Data.Hideout += $J }
+            }
+        }
+
+        # 4. Other Data
+        if (Test-Path $PathBots)     { $Global:Data.Bots     = Import-JsonFast $PathBots }
+        if (Test-Path $PathProjects) { $Global:Data.Projects = Import-JsonFast $PathProjects }
+        if (Test-Path $PathSkills)   { $Global:Data.Skills   = Import-JsonFast $PathSkills }
+        if (Test-Path $PathTrades)   { $Global:Data.Trades   = Import-JsonFast $PathTrades }
+
+        # Save Cache
+        try {
+            $Global:Data | ConvertTo-Json -Depth 20 | Set-Content $CacheFile
+        } catch {}
+        
+        $Global:DataLoaded = $true
+    }
 }
 
 function Get-ItemName {
     param ($Id)
-    if ($Global:Data.Items.ContainsKey($Id)) { return $Global:Data.Items[$Id].name.en }
+    $Item = $Global:Data.Items.$Id
+    if ($Item) { return $Item.name.en }
     return $Id -replace "_", " " -replace "\b\w", { $args[0].Value.ToUpper() }
 }
 
 function Get-ItemValue {
     param ($Id)
     if ($Id -eq "coins" -or $Id -eq "creds") { return 1 }
-    if ($Global:Data.Items.ContainsKey($Id)) { return [int]$Global:Data.Items[$Id].value }
+    $Item = $Global:Data.Items.$Id
+    if ($Item) { return [int]$Item.value }
     return 0
 }
 
 function Get-ItemSlotUsage {
     param ($Id, $Quantity)
-    if (-not $Global:Data.Items.ContainsKey($Id)) { return 0 }
-    $StackSize = $Global:Data.Items[$Id].stackSize
+    $Item = $Global:Data.Items.$Id
+    if (-not $Item) { return 0 }
+    $StackSize = $Item.stackSize
     if (-not $StackSize -or $StackSize -eq 0) { $StackSize = 1 }
     return $Quantity / $StackSize
 }
@@ -898,10 +969,6 @@ function Show-Help {
     Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $Palette.Border $W_Events
 }
 
-# Check for Updates
-$NewVersion = Get-UpdateInfo
-if ($NewVersion) { Show-UpdateBanner -NewVersion $NewVersion }
-
 # Check for Data Submodule
 if (-not (Test-Path $PathItems)) {
     Write-Ansi "`n[!] Data missing. Initializing submodule..." $Palette.Warning
@@ -937,29 +1004,24 @@ Initialize-Data
 $Results = @()
 
 # 1. Search Items
-foreach ($Item in $Global:Data.Items.Values) {
+$ItemData = if ($Global:Data.Items.PSObject) { $Global:Data.Items.PSObject.Properties.Value } else { $Global:Data.Items.Values }
+foreach ($Item in $ItemData) {
     if ($Item.name.en -like "*$Query*" -or $Item.id -eq $Query) {
         $Results += [PSCustomObject]@{ Type="Item"; Name=$Item.name.en; Data=$Item }
     }
 }
 
 # 2. Search Quests
-if (Test-Path $PathQuests) {
-    Get-ChildItem $PathQuests "*.json" | ForEach-Object {
-        $J = Import-JsonFast $_.FullName
-        if ($J -and $J.name.en -like "*$Query*") {
-            $Results += [PSCustomObject]@{ Type="Quest"; Name=$J.name.en; Data=$J }
-        }
+foreach ($Quest in $Global:Data.Quests) {
+    if ($Quest.name.en -like "*$Query*") {
+        $Results += [PSCustomObject]@{ Type="Quest"; Name=$Quest.name.en; Data=$Quest }
     }
 }
 
 # 3. Search Hideout
-if (Test-Path $PathHideout) {
-    Get-ChildItem $PathHideout "*.json" | ForEach-Object {
-        $J = Import-JsonFast $_.FullName
-        if ($J -and $J.name.en -like "*$Query*") {
-            $Results += [PSCustomObject]@{ Type="Hideout"; Name=$J.name.en; Data=$J }
-        }
+foreach ($Hideout in $Global:Data.Hideout) {
+    if ($Hideout.name.en -like "*$Query*") {
+        $Results += [PSCustomObject]@{ Type="Hideout"; Name=$Hideout.name.en; Data=$Hideout }
     }
 }
 
@@ -1085,3 +1147,11 @@ if ($Results.Count -eq 0) {
         }
     }
 }
+
+# -----------------------------------------------------------------------------
+# POST-SEARCH ACTIONS
+# -----------------------------------------------------------------------------
+
+# Check for Updates
+$NewVersion = Get-UpdateInfo
+if ($NewVersion) { Show-UpdateBanner -NewVersion $NewVersion }

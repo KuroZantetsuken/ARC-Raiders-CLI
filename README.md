@@ -15,6 +15,7 @@ A lightweight, fast, and intuitive CLI tool for **ARC Raiders**. Quickly look up
 *   **Event Schedule**: Live schedule of Map Events (Major & Minor) in your local time.
 *   **Trade Profit**: Shows if a trade is profitable based on market values.
 *   **Rich UI**: Pleasant terminal output with colors, badges, and card-based layouts.
+*   **High Performance**: Uses an intelligent data-caching system to deliver search results in under a second.
 
 ## Installation
 
