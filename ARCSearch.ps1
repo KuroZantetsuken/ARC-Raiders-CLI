@@ -93,10 +93,11 @@ $Sym = @{
 
 function Write-Ansi {
     param (
-        [Parameter(Mandatory=$true)][string]$Text,
+        [string]$Text,
         [string]$ColorCode = $Theme.Reset,
         [switch]$NoNewline
     )
+    if ([string]::IsNullOrEmpty($Text)) { return }
     $Esc = [char]27
     $Out = "$Esc[${ColorCode}m$Text$Esc[0m"
     if ($NoNewline) { Write-Host $Out -NoNewline } else { Write-Host $Out }
@@ -594,98 +595,149 @@ function Show-Events {
     $Data = Import-JsonFast $PathEvents
     $Sched = $Data.schedule
     $Types = $Data.eventTypes
-    $Maps  = $Data.maps
     
+    # 1. Setup Time Base (Top of current hour)
     $TimeNow = [DateTime]::UtcNow
-    $Hour = $TimeNow.Hour
-    $LocalTime = [DateTime]::Now.ToString("HH:mm")
+    $BaseTime = [DateTime]::new($TimeNow.Year, $TimeNow.Month, $TimeNow.Day, $TimeNow.Hour, 0, 0, [System.DateTimeKind]::Utc)
     
-    $W = 62
+    # 2. Config & Colors
+    $W_Time = 7
+    $W_Events = 60
+    $W_Total = $W_Time + $W_Events + 3 # Borders
     
-    # Header
-    Write-BoxRow $Sym.Box.TL $Sym.Box.H $Sym.Box.TR $Palette.Border $W
-    Write-ContentRow -Text "EVENT SCHEDULE" -TextColor $Palette.Accent -BorderColor $Palette.Border -Align "Center" $W
-    Write-BoxRow $Sym.Box.L $Sym.Box.H $Sym.Box.R $Palette.Border $W
-    
-    # Active Events
-    Write-ContentRow -Text " ACTIVE NOW ($LocalTime)" -TextColor $Palette.Success -BorderColor $Palette.Border $W
-    Write-BoxRow $Sym.Box.L $Sym.Box.H $Sym.Box.R $Palette.Border $W
-    
-    foreach ($MapKey in $Sched.PSObject.Properties.Name) {
-        $MapName = if ($Maps.$MapKey.displayName) { $Maps.$MapKey.displayName } else { $MapKey }
-        $MajorKey = $Sched.$MapKey.major."$Hour"
-        $MinorKey = $Sched.$MapKey.minor."$Hour"
-        
-        if ($MajorKey -or $MinorKey) {
-            Write-ContentRow -Text " $MapName" -TextColor $Palette.Text -BorderColor $Palette.Border $W
-            
-            if ($MajorKey) {
-                $Name = $Types.$MajorKey.displayName
-                Write-ContentRow -Text "   Major: $Name" -TextColor $Palette.Subtext -BorderColor $Palette.Border $W
-            }
-            if ($MinorKey) {
-                $Name = $Types.$MinorKey.displayName
-                Write-ContentRow -Text "   Minor: $Name" -TextColor $Palette.Accent -BorderColor $Palette.Border $W
-            }
-            Write-BoxRow $Sym.Box.L $Sym.Box.H $Sym.Box.R $Palette.Border $W
-        }
+    # Map Colors (Text / Bg)
+    # Bg colors: 40=Black, 41=Red, 42=Green, 43=Yellow, 44=Blue, 45=Magenta, 46=Cyan, 47=White, 100=BrBlack
+    $MapColors = @{
+        "blue-gate"        = @{ Text="34"; Bg="44" } # Blue
+        "buried-city"      = @{ Text="33"; Bg="43" } # Yellow
+        "dam-battleground" = @{ Text="90"; Bg="100" } # Grey (BrBlack)
+        "the-spaceport"    = @{ Text="31"; Bg="41" } # Red
+        "stella-montis"    = @{ Text="36"; Bg="46" } # Cyan
     }
     
-    # Upcoming
-    Write-ContentRow -Text " UPCOMING SCHEDULE" -TextColor $Palette.Accent -BorderColor $Palette.Border $W
+    # Header
+    Write-BoxRow $Sym.Box.TL $Sym.Box.H $Sym.Box.TR $Palette.Border $W_Total
     
-    $Sep = "$($Sym.Box.L)$([string]::new($Sym.Box.H, 7))$($Sym.Box.C)$([string]::new($Sym.Box.H, 30))$($Sym.Box.C)$([string]::new($Sym.Box.H, 21))$($Sym.Box.R)"
-    Write-Ansi $Sep $Palette.Border
+    # Inverted Title (Reverse Video = 7)
+    $Title = " UPCOMING SCHEDULE "
+    $PadTotal = $W_Total - 2 - $Title.Length
+    $PadL = [math]::Floor($PadTotal / 2)
+    $PadR = [math]::Ceiling($PadTotal / 2)
     
-    $List = @()
-    foreach ($EKey in $Types.PSObject.Properties.Name) {
-        if ($EKey -eq "none" -or $Types.$EKey.disabled) { continue }
-        $BestH = 999; $Next = $null
-        foreach ($MKey in $Sched.PSObject.Properties.Name) {
-            foreach ($Cat in @("major", "minor")) {
-                $S = $Sched.$MKey.$Cat
-                if (-not $S) { continue }
-                for ($i=0; $i -lt 24; $i++) {
-                    if ($S."$(($Hour + $i) % 24)" -eq $EKey) {
-                        if ($i -lt $BestH) {
-                            $BestH = $i
-                            $Next = @{
-                                Name = $Types.$EKey.displayName
-                                Map  = if ($Maps.$MKey.displayName) { $Maps.$MKey.displayName } else { $MKey }
-                                Time = $TimeNow.AddHours($i)
-                                Cat  = $Types.$EKey.category
-                            }
+    Write-Ansi $Sym.Box.V $Palette.Border -NoNewline
+    Write-Ansi ([string]::new(" ", $PadL)) -NoNewline
+    Write-Ansi $Title "7" -NoNewline # 7 = Reverse Video
+    Write-Ansi ([string]::new(" ", $PadR)) -NoNewline
+    Write-Ansi $Sym.Box.V $Palette.Border
+    
+    # Header Separator (Top T)
+    $SepHeader = "$($Sym.Box.L)$([string]::new($Sym.Box.H, $W_Time))$($Sym.Box.T)$([string]::new($Sym.Box.H, $W_Events))$($Sym.Box.R)"
+    Write-Ansi $SepHeader $Palette.Border
+    
+    # 3. Scan for Next Occurrence of each Event
+    $NextEvents = @{} # Key: EventName -> Object
+    
+    for ($i = 0; $i -lt 24; $i++) {
+        $TargetTime = $BaseTime.AddHours($i)
+        $TargetHour = $TargetTime.Hour
+        
+        foreach ($MapKey in $Sched.PSObject.Properties.Name) {
+            # Helper to process event
+            $Process = {
+                param($Key, $Cat)
+                if ($Key -and $Types.$Key -and -not $Types.$Key.disabled) {
+                    $N = $Types.$Key.displayName
+                    if (-not $NextEvents.ContainsKey($N)) {
+                        $NextEvents[$N] = [PSCustomObject]@{
+                            Name = $N
+                            MapKey = $MapKey
+                            Cat = $Cat
+                            TimeSort = $i
+                            TimeStr = if ($i -eq 0) { "NOW" } else { $TargetTime.ToLocalTime().ToString("HH:mm") }
                         }
                     }
                 }
             }
+            
+            # Check Major & Minor
+            & $Process $Sched.$MapKey.major."$TargetHour" "major"
+            & $Process $Sched.$MapKey.minor."$TargetHour" "minor"
         }
-        if ($Next) { $List += [PSCustomObject]$Next }
     }
     
-    $List = $List | Sort-Object Time
+    # 4. Group and Display
+    $Groups = $NextEvents.Values | Group-Object TimeSort | Sort-Object { [int]$_.Name }
     
-    foreach ($Ev in $List) {
-        $TStr = if (($Ev.Time - $TimeNow).TotalHours -lt 1) { " NOW " } else { $Ev.Time.ToLocalTime().ToString("HH:mm") }
-        $EvColor = if ($Ev.Cat -eq "major") { $Palette.Text } else { $Palette.Subtext }
+    $FirstRow = $true
+    foreach ($Grp in $Groups) {
+        if (-not $FirstRow) {
+             # Middle Separator (Cross)
+             Write-Ansi "$($Sym.Box.L)$([string]::new($Sym.Box.H, $W_Time))$($Sym.Box.C)$([string]::new($Sym.Box.H, $W_Events))$($Sym.Box.R)" $Palette.Border
+        }
+        $FirstRow = $false
         
-        Write-Ansi $Sym.Box.V $Palette.Border -NoNewline
-        Write-Ansi $TStr.PadRight(7) $Palette.Accent -NoNewline
-        Write-Ansi $Sym.Box.V $Palette.Border -NoNewline
+        $TimeStr = $Grp.Group[0].TimeStr
         
-        $N = $Ev.Name; if ($N.Length -gt 30) { $N = $N.Substring(0, 27) + "..." }
-        Write-Ansi $N.PadRight(30) $EvColor -NoNewline
-        Write-Ansi $Sym.Box.V $Palette.Border -NoNewline
+        # Sort events in this time slot? Alphabetical or Major first?
+        # Let's do Major first, then Alphabetical
+        $EventsInSlot = $Grp.Group | Sort-Object @{Expression="Cat"; Descending=$false}, "Name"
         
-        $M = $Ev.Map; if ($M.Length -gt 21) { $M = $M.Substring(0, 18) + "..." }
-        Write-Ansi $M.PadRight(21) $Palette.Subtext -NoNewline
-        Write-Ansi $Sym.Box.V $Palette.Border
+        $EventStrings = @()
+        foreach ($Ev in $EventsInSlot) {
+            $Cols = $MapColors[$Ev.MapKey]
+            if (-not $Cols) { $Cols = @{ Text="37"; Bg="40" } }
+            
+            if ($Ev.Cat -eq "major") {
+                $EventStrings += "$([char]27)[$($Cols.Bg);30m $($Ev.Name) $([char]27)[0m"
+            } else {
+                $EventStrings += "$([char]27)[$($Cols.Text)m$($Ev.Name)$([char]27)[0m"
+            }
+        }
         
-        if ($Ev -ne $List[-1]) { Write-Ansi $Sep $Palette.Border }
+        # Wrap Logic
+        $VisLen = 0
+        $Buffer = @()
+        $LinesToPrint = @()
+        
+        for ($k=0; $k -lt $EventStrings.Count; $k++) {
+            $Seg = $EventStrings[$k]
+            $SegClean = $Seg -replace "\x1B\[[0-9;]*[a-zA-Z]", ""
+            $SepLen = if ($Buffer.Count -gt 0) { 2 } else { 0 }
+            $AddLen = $SegClean.Length + $SepLen
+            
+            if (($VisLen + $AddLen) -gt ($W_Events - 2)) {
+                $LinesToPrint += ($Buffer -join ", ")
+                $Buffer = @($Seg)
+                $VisLen = $SegClean.Length
+            } else {
+                $Buffer += $Seg
+                $VisLen += $AddLen
+            }
+        }
+        if ($Buffer.Count -gt 0) { $LinesToPrint += ($Buffer -join ", ") }
+        
+        # Print Rows
+        for ($k=0; $k -lt $LinesToPrint.Count; $k++) {
+            $RowTime = if ($k -eq 0) { $TimeStr } else { "" }
+            $RowContent = $LinesToPrint[$k]
+            
+            Write-Ansi $Sym.Box.V $Palette.Border -NoNewline
+            Write-Ansi $RowTime.PadRight($W_Time) $Theme.Reset -NoNewline # Time in Default Color
+            Write-Ansi $Sym.Box.V $Palette.Border -NoNewline
+            
+            $CleanContent = $RowContent -replace "\x1B\[[0-9;]*[a-zA-Z]", ""
+            $PadRight = $W_Events - $CleanContent.Length
+            if ($PadRight -lt 0) { $PadRight = 0 }
+            
+            Write-Ansi $RowContent -NoNewline
+            if ($PadRight -gt 0) { Write-Ansi ([string]::new(" ", $PadRight)) -NoNewline }
+            Write-Ansi $Sym.Box.V $Palette.Border
+        }
     }
     
-    $Bot = "$($Sym.Box.BL)$([string]::new($Sym.Box.H, 7))$($Sym.Box.B)$([string]::new($Sym.Box.H, 30))$($Sym.Box.B)$([string]::new($Sym.Box.H, 21))$($Sym.Box.BR)"
-    Write-Ansi $Bot $Palette.Border
+    # Bottom (Bottom T)
+    $BotRow = "$($Sym.Box.BL)$([string]::new($Sym.Box.H, $W_Time))$($Sym.Box.B)$([string]::new($Sym.Box.H, $W_Events))$($Sym.Box.BR)"
+    Write-Ansi $BotRow $Palette.Border
 }
 
 # -----------------------------------------------------------------------------
