@@ -31,6 +31,7 @@ $PathBots       = Join-Path $RepoRoot "arcraiders-data\bots.json"
 $PathProjects   = Join-Path $RepoRoot "arcraiders-data\projects.json"
 $PathSkills     = Join-Path $RepoRoot "arcraiders-data\skillNodes.json"
 $PathTrades     = Join-Path $RepoRoot "arcraiders-data\trades.json"
+$GlobalCache    = Join-Path $RepoRoot ".cache"
 
 # ANSI Escape Codes
 $Theme = @{
@@ -252,20 +253,18 @@ function Show-Card {
 }
 
 function Get-UpdateInfo {
-    $CacheFile = Join-Path $RepoRoot ".update-cache"
     $Now = Get-Date
+    $Cache = if (Test-Path $GlobalCache) { Import-JsonFast $GlobalCache } else { @{} }
+    $UpdateCache = if ($Cache.Updates) { $Cache.Updates } else { @{} }
     
     # 1. Check if we have a cached update notification
-    if (Test-Path $CacheFile) {
-        $Cache = Import-JsonFast $CacheFile
-        if ($Cache -and $Cache.LatestVersion -and $Cache.LatestVersion -ne $CurrentVersion) {
-            # Show cached update if last check was within 24h
-            if ($Cache.LastCheck -and ([DateTime]$Cache.LastCheck) -gt $Now.AddHours(-24)) {
-                return $Cache.LatestVersion
-            }
-        } elseif ($Cache -and $Cache.LastCheck -and ([DateTime]$Cache.LastCheck) -gt $Now.AddHours(-24)) {
-            return $null
+    if ($UpdateCache.LatestVersion -and $UpdateCache.LatestVersion -ne $CurrentVersion) {
+        # Show cached update if last check was within 24h
+        if ($UpdateCache.LastCheck -and ([DateTime]$UpdateCache.LastCheck) -gt $Now.AddHours(-24)) {
+            return $UpdateCache.LatestVersion
         }
+    } elseif ($UpdateCache.LastCheck -and ([DateTime]$UpdateCache.LastCheck) -gt $Now.AddHours(-24)) {
+        return $null
     }
 
     # 2. Perform Check
@@ -273,14 +272,25 @@ function Get-UpdateInfo {
         $Repo = "KuroZantetsuken/ARC-Raiders-CLI"
         $Url  = "https://api.github.com/repos/$Repo/releases/latest"
         $Latest = Invoke-RestMethod -Uri $Url -ErrorAction SilentlyContinue
-        if ($Latest -and $Latest.tag_name -and $Latest.tag_name -ne $CurrentVersion) {
-            $NewVer = $Latest.tag_name
-            $CacheObj = @{ LastCheck = $Now.ToString("o"); LatestVersion = $NewVer }
-            $CacheObj | ConvertTo-Json | Set-Content $CacheFile
-            return $NewVer
+        
+        $VerToCache = $CurrentVersion
+        if ($Latest -and $Latest.tag_name) {
+            $VerToCache = $Latest.tag_name
+        }
+
+        # Merge and Save
+        $UpdateCache.LastCheck = $Now.ToString("o")
+        $UpdateCache.LatestVersion = $VerToCache
+
+        if ($Cache.PSObject -and -not $Cache.PSObject.Properties['Updates']) {
+            $Cache | Add-Member -MemberType NoteProperty -Name "Updates" -Value $UpdateCache
         } else {
-            $CacheObj = @{ LastCheck = $Now.ToString("o"); LatestVersion = $CurrentVersion }
-            $CacheObj | ConvertTo-Json | Set-Content $CacheFile
+            $Cache.Updates = $UpdateCache
+        }
+        $Cache | ConvertTo-Json -Depth 20 -Compress | Set-Content $GlobalCache
+        
+        if ($VerToCache -ne $CurrentVersion) {
+            return $VerToCache
         }
     } catch {}
     return $null
@@ -354,15 +364,18 @@ $Global:Data = @{
     Trades   = @()
 }
 $Global:DataLoaded = $false
-$CacheFile = Join-Path $RepoRoot ".data-cache.json"
 
 function Initialize-Data {
+    param ([switch]$ShowStatus)
+
     if ($Global:DataLoaded) { return }
 
     # Check Cache Validity
     $NeedsRebuild = $true
-    if (Test-Path $CacheFile) {
-        $CacheTime = (Get-Item $CacheFile).LastWriteTime
+    $Cache = if (Test-Path $GlobalCache) { Import-JsonFast $GlobalCache } else { @{} }
+    
+    if ($Cache.Data) {
+        $CacheTime = (Get-Item $GlobalCache).LastWriteTime
         
         # Fast check: only check the directories themselves first
         $DataDirs = @($PathItems, $PathQuests, $PathHideout)
@@ -378,18 +391,14 @@ function Initialize-Data {
         
         # If directories look okay, we trust the cache (avoids recursive file scan)
         if (-not $NeedsRebuild) {
-            try {
-                $Loaded = Import-JsonFast $CacheFile
-                if ($Loaded -and $Loaded.Items) {
-                    $Global:Data = $Loaded
-                    $Global:DataLoaded = $true
-                } else {
-                    $NeedsRebuild = $true
-                }
-            } catch {
-                $NeedsRebuild = $true
-            }
+            $Global:Data = $Cache.Data
+            $Global:DataLoaded = $true
         }
+    }
+
+    if ($ShowStatus) {
+        $StatusMsg = if ($NeedsRebuild -and -not $Cache.Data) { " (Building Cache)" } elseif ($NeedsRebuild) { " (Updating Cache)" } else { "" }
+        Write-Ansi "Searching$StatusMsg..." $Palette.Subtext
     }
 
     if ($NeedsRebuild) {
@@ -435,7 +444,12 @@ function Initialize-Data {
 
         # Save Cache
         try {
-            $Global:Data | ConvertTo-Json -Depth 20 | Set-Content $CacheFile
+            if ($Cache.PSObject -and -not $Cache.PSObject.Properties['Data']) {
+                $Cache | Add-Member -MemberType NoteProperty -Name "Data" -Value $Global:Data
+            } else {
+                $Cache.Data = $Global:Data
+            }
+            $Cache | ConvertTo-Json -Depth 20 -Compress | Set-Content $GlobalCache
         } catch {}
         
         $Global:DataLoaded = $true
@@ -998,8 +1012,7 @@ if ($Query -eq "events") {
     exit
 }
 
-Write-Ansi "Searching..." $Palette.Subtext
-Initialize-Data
+Initialize-Data -ShowStatus
 
 $Results = @()
 

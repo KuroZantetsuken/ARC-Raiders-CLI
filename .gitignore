@@ -1,4 +1,2 @@
 arc.bat
-release/
-.update-cache
-.data-cache.json
+.cache
