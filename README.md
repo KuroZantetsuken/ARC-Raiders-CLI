@@ -21,7 +21,7 @@ A command-line utility for looking up game data from ARC Raiders.
 ### From Release
 1. Download the [latest release](https://github.com/KuroZantetsuken/ARC-Raiders-Data-CLI/releases/latest/download/arc-raiders-cli.zip).
 2. Extract the ZIP to a folder.
-3. Double-click `setup.bat` to run it.
+3. Double-click `install.bat` to run it.
 4. Restart your terminal to enable the `arc` command.
 
 ### From Source (Git)
@@ -56,10 +56,7 @@ For release builds, use `arc update` to update the entire tool including data.
 
 ## Uninstallation
 
-To remove the tool from your system PATH and delete the command alias:
-```powershell
-.\Setup.ps1 -Uninstall
-```
+To remove the tool from your system PATH and delete the command alias, run `uninstall.bat`.
 
 ## Credits
 This tool uses game data provided by the [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) project.
