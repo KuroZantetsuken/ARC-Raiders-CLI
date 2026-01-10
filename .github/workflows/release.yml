@@ -33,7 +33,7 @@ jobs:
           sed -i "s/\$CurrentVersion = \"vDEV\"/\$CurrentVersion = \"$VERSION\"/" ARCSearch.ps1
           
           cp ARCSearch.ps1 release/
-          cp Setup.ps1 release/
+          cp setup.bat release/
           
           # Recreate arc.bat in the package
           echo "@echo off" > release/arc.bat

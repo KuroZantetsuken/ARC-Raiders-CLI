@@ -21,7 +21,7 @@ A command-line utility for looking up game data from ARC Raiders.
 ### From Release
 1. Download the [latest release](https://github.com/KuroZantetsuken/ARC-Raiders-Data-CLI/releases/latest/download/arc-raiders-cli.zip).
 2. Extract the ZIP to a folder.
-3. Right-click `Setup.ps1` and select **Run with PowerShell** (or run `.\Setup.ps1` in a terminal).
+3. Double-click `setup.bat` to run it.
 4. Restart your terminal to enable the `arc` command.
 
 ### From Source (Git)
