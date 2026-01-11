@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
     paths:
       - 'arc-raiders-cli.ps1'
       - 'install.bat'
@@ -81,36 +79,16 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ github.run_number }}
-          name: Build v${{ github.run_number }}
+          name: v${{ github.run_number }}
           body: |
-            ### Changes since last build:
+            ### Changes since last release:
             ${{ steps.changelog.outputs.changelog }}
-            
-            Automated build containing the core CLI tool and current JSON game data.
-            
-            **Attribution**:
-            Data provided by [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) and [arctracker.io](https://arctracker.io).
+                        
+            > [!NOTE]
+            > This is an automated build containing the core scripts and current JSON game data provided by [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data)
           files: arc-raiders-cli.zip
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create Tagged Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
-        with:
-          name: Release ${{ github.ref_name }}
-          body: |
-            ### Changes:
-            ${{ steps.changelog.outputs.changelog }}
-            
-            Automated build containing the core CLI tool and current JSON game data.
-            
-            **Attribution**:
-            Data provided by [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) and [arctracker.io](https://arctracker.io).
-          files: arc-raiders-cli.zip
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
