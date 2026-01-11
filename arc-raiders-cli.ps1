@@ -215,7 +215,7 @@ function Save-Cache {
             }
         }
         
-        $CleanCache | ConvertTo-Json -Depth 20 -Compress | Set-Content $GlobalCache -ErrorAction Stop
+        ConvertTo-Json -InputObject $CleanCache -Depth 20 -Compress | Set-Content $GlobalCache -ErrorAction Stop
     } catch {
         # Silent failure for cache saving is acceptable, but we don't want to crash
     }
@@ -510,12 +510,21 @@ function Initialize-Data {
     if ($Cache.ContainsKey("Data") -and $null -ne $Cache.Data) {
         $CacheTime = (Get-Item $GlobalCache).LastWriteTime
         
-        # Fast check: only check the directories themselves first
-        $DataDirs = @($PathItems, $PathQuests, $PathHideout)
+        # Fast check: check data sources and the script itself for changes
+        $WatchPaths = @(
+            $PSCommandPath,
+            $PathItems,
+            $PathQuests,
+            $PathHideout,
+            $PathBots,
+            $PathProjects,
+            $PathSkills,
+            $PathTrades
+        )
         $NeedsRebuild = $false
-        foreach ($Dir in $DataDirs) {
-            if (Test-Path $Dir) {
-                if ((Get-Item $Dir).LastWriteTime -gt $CacheTime) {
+        foreach ($Path in $WatchPaths) {
+            if (Test-Path $Path) {
+                if ((Get-Item $Path).LastWriteTime -gt $CacheTime) {
                     $NeedsRebuild = $true
                     break
                 }
@@ -526,10 +535,16 @@ function Initialize-Data {
         if (-not $NeedsRebuild) {
             # Standardize Global:Data to hashtable for consistent searching
             $DataObj = $Cache.Data
-            if ($DataObj -isnot [hashtable]) {
+            if ($null -ne $DataObj -and $DataObj -isnot [hashtable]) {
                 $H = @{}
                 foreach ($P in $DataObj.PSObject.Properties) {
                     $Val = $P.Value
+
+                    # Handle PowerShell's occasional 'value' property wrapping for collections
+                    if ($null -ne $Val -and $null -ne $Val.PSObject -and $null -ne $Val.PSObject.Properties["value"] -and $null -ne $Val.PSObject.Properties["Count"]) {
+                        $Val = $Val.value
+                    }
+
                     # Standardize the Items collection specifically as it's used as a map
                     if ($P.Name -eq "Items" -and $Val -isnot [hashtable]) {
                         $ItemsH = @{}
@@ -776,16 +791,18 @@ function Show-Item {
     
     # Drops from Bots
     $DroppingBots = @()
-    if ($Global:Data.Bots) {
-        foreach ($Bot in $Global:Data.Bots) {
+    $BotData = if ($Global:Data.Bots.PSObject.Properties["value"]) { $Global:Data.Bots.value } else { $Global:Data.Bots }
+    if ($BotData) {
+        foreach ($Bot in $BotData) {
             if ($Bot.drops -contains $Item.id) { $DroppingBots += $Bot.name }
         }
     }
 
     # Rewards from Quests
     $QuestRewards = @()
-    if ($Global:Data.Quests) {
-        foreach ($Quest in $Global:Data.Quests) {
+    $QuestData = if ($Global:Data.Quests.PSObject.Properties["value"]) { $Global:Data.Quests.value } else { $Global:Data.Quests }
+    if ($QuestData) {
+        foreach ($Quest in $QuestData) {
             if ($Quest.grantedItemIds -and ($Quest.grantedItemIds.itemId -contains $Item.id)) {
                 $QuestRewards += $Quest.name.en
             }
@@ -819,7 +836,8 @@ function Show-Item {
     }
 
     # Sold By (Trades)
-    $ItemTrades = $Global:Data.Trades | Where-Object { $_.itemId -eq $Item.id }
+    $TradesData = if ($Global:Data.Trades.PSObject.Properties["value"]) { $Global:Data.Trades.value } else { $Global:Data.Trades }
+    $ItemTrades = $TradesData | Where-Object { $_.itemId -eq $Item.id }
     
     if ($ItemTrades) {
         # Determine Market Value (Coins) if available
@@ -1252,35 +1270,40 @@ foreach ($Item in $ItemData) {
 }
 
 # 2. Search Quests
-foreach ($Quest in $Global:Data.Quests) {
+$QuestData = if ($Global:Data.Quests.PSObject.Properties["value"]) { $Global:Data.Quests.value } else { $Global:Data.Quests }
+foreach ($Quest in $QuestData) {
     if ($Quest.name.en -like "*$Query*") {
         $Results += [PSCustomObject]@{ Type="Quest"; Name=$Quest.name.en; Data=$Quest }
     }
 }
 
 # 3. Search Hideout
-foreach ($Hideout in $Global:Data.Hideout) {
+$HideoutData = if ($Global:Data.Hideout.PSObject.Properties["value"]) { $Global:Data.Hideout.value } else { $Global:Data.Hideout }
+foreach ($Hideout in $HideoutData) {
     if ($Hideout.name.en -like "*$Query*") {
         $Results += [PSCustomObject]@{ Type="Hideout"; Name=$Hideout.name.en; Data=$Hideout }
     }
 }
 
 # 4. Search Bots
-foreach ($Bot in $Global:Data.Bots) {
+$BotData = if ($Global:Data.Bots.PSObject.Properties["value"]) { $Global:Data.Bots.value } else { $Global:Data.Bots }
+foreach ($Bot in $BotData) {
     if ($Bot.name -like "*$Query*") {
         $Results += [PSCustomObject]@{ Type="ARC"; Name=$Bot.name; Data=$Bot }
     }
 }
 
 # 5. Search Projects
-foreach ($Proj in $Global:Data.Projects) {
+$ProjData = if ($Global:Data.Projects.PSObject.Properties["value"]) { $Global:Data.Projects.value } else { $Global:Data.Projects }
+foreach ($Proj in $ProjData) {
     if ($Proj.name.en -like "*$Query*") {
         $Results += [PSCustomObject]@{ Type="Project"; Name=$Proj.name.en; Data=$Proj }
     }
 }
 
 # 6. Search Skills
-foreach ($Skill in $Global:Data.Skills) {
+$SkillData = if ($Global:Data.Skills.PSObject.Properties["value"]) { $Global:Data.Skills.value } else { $Global:Data.Skills }
+foreach ($Skill in $SkillData) {
     if ($Skill.name.en -like "*$Query*") {
         $Results += [PSCustomObject]@{ Type="Skill"; Name=$Skill.name.en; Data=$Skill }
     }
