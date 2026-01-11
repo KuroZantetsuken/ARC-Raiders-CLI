@@ -197,6 +197,20 @@ function Import-JsonFast {
     }
 }
 
+function Save-Cache {
+    param ($Cache)
+    try {
+        # Ensure we save a clean object to avoid PSCustomObject 'value' nesting issues
+        $CleanCache = @{}
+        foreach ($Prop in $Cache.PSObject.Properties) {
+            $CleanCache[$Prop.Name] = $Prop.Value
+        }
+        $CleanCache | ConvertTo-Json -Depth 20 -Compress | Set-Content $GlobalCache -ErrorAction Stop
+    } catch {
+        # Silent failure for cache saving is acceptable, but we don't want to crash
+    }
+}
+
 function Get-WrappedText {
     param (
         [string]$Text,
@@ -356,7 +370,7 @@ function Get-UpdateInfo {
         } else {
             $Cache.Updates = $UpdateCache
         }
-        $Cache | ConvertTo-Json -Depth 20 -Compress | Set-Content $GlobalCache
+        Save-Cache -Cache $Cache
         
         if ($VerToCache -ne $CurrentVersion) {
             return $VerToCache
@@ -461,19 +475,6 @@ function Initialize-Data {
         # If directories look okay, we trust the cache (avoids recursive file scan)
         if (-not $NeedsRebuild) {
             $Global:Data = $Cache.Data
-
-            # Ensure collections are correctly unwrapped from cache
-            $Keys = @("Quests", "Hideout", "Bots", "Projects", "Skills", "Trades")
-            foreach ($Key in $Keys) {
-                if ($Global:Data.$Key -and $Global:Data.$Key.PSObject -and $Global:Data.$Key.PSObject.Properties['value']) {
-                    $Global:Data.$Key = $Global:Data.$Key.value
-                }
-            }
-            # For Items (Hashtable in fresh, PSCustomObject in cache)
-            if ($Global:Data.Items -and $Global:Data.Items.PSObject -and $Global:Data.Items.PSObject.Properties['value']) {
-                $Global:Data.Items = $Global:Data.Items.value
-            }
-
             $Global:DataLoaded = $true
         }
     }
@@ -526,12 +527,8 @@ function Initialize-Data {
 
         # Save Cache
         try {
-            if ($Cache.PSObject -and -not $Cache.PSObject.Properties['Data']) {
-                $Cache | Add-Member -MemberType NoteProperty -Name "Data" -Value $Global:Data
-            } else {
-                $Cache.Data = $Global:Data
-            }
-            $Cache | ConvertTo-Json -Depth 20 -Compress | Set-Content $GlobalCache
+            $Cache.Data = $Global:Data
+            Save-Cache -Cache $Cache
         } catch {}
         
         $Global:DataLoaded = $true
