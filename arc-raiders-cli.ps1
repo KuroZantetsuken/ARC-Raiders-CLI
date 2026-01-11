@@ -377,7 +377,8 @@ function Get-UpdateInfo {
             return $VerToCache
         }
     } catch {
-        # Silently fail for update checks
+        # Silently fail for update checks to avoid annoying the user during normal operation
+        # but we could log to a file here if needed.
     }
     return $null
 }
@@ -555,10 +556,8 @@ function Initialize-Data {
         if (Test-Path $PathTrades)   { $Global:Data.Trades   = Import-JsonFast $PathTrades }
 
         # Save Cache
-        try {
-            $Cache.Data = $Global:Data
-            Save-Cache -Cache $Cache
-        } catch {}
+        $Cache.Data = $Global:Data
+        Save-Cache -Cache $Cache
         
         $Global:DataLoaded = $true
     }
@@ -1273,6 +1272,7 @@ if ($Results.Count -eq 0) {
         
         Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $Palette.Border $W_Results
         Write-Ansi "`nSelect (0-$($Results.Count - 1)): " $Palette.Accent -NoNewline
+        
         try {
             if ($Results.Count -le 10) {
                 # Fast selection for single-digit results
