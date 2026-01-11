@@ -91,6 +91,24 @@ if ($InputArgs) {
 # -----------------------------------------------------------------------------
 
 $CurrentVersion = "vDEV"
+
+# Start background update check as early as possible
+$UpdateJob = $null
+if ($CurrentVersion -ne "vDEV") {
+    $UpdateJob = Start-Job -Name "ArcUpdateCheck" -ScriptBlock {
+        param($Ver)
+        try {
+            $Repo = "KuroZantetsuken/ARC-Raiders-CLI"
+            $Url  = "https://api.github.com/repos/$Repo/releases/latest"
+            $Latest = Invoke-RestMethod -Uri $Url -ErrorAction SilentlyContinue
+            if ($Latest -and $Latest.tag_name -and $Latest.tag_name -ne $Ver) {
+                return $Latest.tag_name
+            }
+        } catch {}
+        return $null
+    } -ArgumentList $CurrentVersion
+}
+
 $RepoRoot       = $PSScriptRoot
 $PathItems      = Join-Path $RepoRoot "arcraiders-data\items"
 $PathQuests     = Join-Path $RepoRoot "arcraiders-data\quests"
@@ -345,56 +363,6 @@ function Show-Card {
     Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $BorderColor $Width
 }
 
-function Get-UpdateInfo {
-    $Now = Get-Date
-    $Cache = if (Test-Path $GlobalCache) { Import-JsonFast $GlobalCache } else { @{} }
-    $UpdateCache = if ($Cache.Updates) { $Cache.Updates } else { @{} }
-    
-    # 1. Check if we have a cached update notification
-    $ValidLastCheck = $false
-    if ($UpdateCache.LastCheck) {
-        try {
-            $LastCheckDate = [DateTime]$UpdateCache.LastCheck
-            if ($LastCheckDate -gt $Now.AddHours(-24)) { $ValidLastCheck = $true }
-        } catch {}
-    }
-
-    if ($UpdateCache.LatestVersion -and $UpdateCache.LatestVersion -ne $CurrentVersion) {
-        # Show cached update if last check was within 24h
-        if ($ValidLastCheck) {
-            return $UpdateCache.LatestVersion
-        }
-    } elseif ($ValidLastCheck) {
-        return $null
-    }
-
-    # 2. Perform Check
-    try {
-        $Repo = "KuroZantetsuken/ARC-Raiders-CLI"
-        $Url  = "https://api.github.com/repos/$Repo/releases/latest"
-        $Latest = Invoke-RestMethod -Uri $Url -ErrorAction SilentlyContinue
-        
-        $VerToCache = $CurrentVersion
-        if ($Latest -and $Latest.tag_name) {
-            $VerToCache = $Latest.tag_name
-        }
-
-        # Merge and Save
-        $UpdateCache.LastCheck = $Now.ToString("o")
-        $UpdateCache.LatestVersion = $VerToCache
-
-        $Cache["Updates"] = $UpdateCache
-        Save-Cache -Cache $Cache
-        
-        if ($VerToCache -ne $CurrentVersion) {
-            return $VerToCache
-        }
-    } catch {
-        # Silently fail for update checks to avoid interrupting normal operation.
-    }
-    return $null
-}
-
 function Show-UpdateBanner {
     param ($NewVersion)
     $Lines = @(
@@ -446,18 +414,46 @@ function Update-ArcRaidersCLI {
         }
 
         Write-Ansi "Installing update to $RepoRoot..." $Palette.Subtext
-        # Copy files individually to preserve the directory structure while protecting local files (like .cache)
-        Get-ChildItem -Path $ExtPath -Recurse | ForEach-Object {
-            $RelativePath = $_.FullName.Substring($ExtPath.Length + 1)
-            $Dest = Join-Path $RepoRoot $RelativePath
-            if ($_.PSIsContainer) {
-                if (-not (Test-Path $Dest)) { New-Item -Path $Dest -ItemType Directory -Force | Out-Null }
-            } else {
-                # Don't overwrite the cache file
-                if ($_.Name -ne ".cache") {
-                    Copy-Item -Path $_.FullName -Destination $Dest -Force
+        
+        # 1. Create a backup of the current script for recovery if needed
+        $BackupFile = Join-Path $RepoRoot "arc-raiders-cli.ps1.bak"
+        Copy-Item -Path $PSCommandPath -Destination $BackupFile -Force
+
+        try {
+            # 2. Copy files individually to preserve the directory structure while protecting local files
+            $UpdateFiles = Get-ChildItem -Path $ExtPath -Recurse
+            foreach ($File in $UpdateFiles) {
+                $RelativePath = $File.FullName.Substring($ExtPath.Length + 1)
+                $Dest = Join-Path $RepoRoot $RelativePath
+                
+                if ($File.PSIsContainer) {
+                    if (-not (Test-Path $Dest)) { New-Item -Path $Dest -ItemType Directory -Force | Out-Null }
+                } else {
+                    # Skip files that should remain local (like .cache or .git)
+                    if ($File.Name -eq ".cache" -or $File.Name -eq ".gitignore" -or $File.Name -eq ".gitmodules") {
+                        continue
+                    }
+                    
+                    # Robust move/replace
+                    if (Test-Path $Dest) {
+                        # Move to temporary before replacing to avoid "file in use" issues in some environments
+                        $TempFile = $Dest + ".old"
+                        Move-Item -Path $Dest -Destination $TempFile -Force -ErrorAction SilentlyContinue
+                        Copy-Item -Path $File.FullName -Destination $Dest -Force
+                        Remove-Item $TempFile -Force -ErrorAction SilentlyContinue
+                    } else {
+                        Copy-Item -Path $File.FullName -Destination $Dest -Force
+                    }
                 }
             }
+            # Remove backup on success
+            Remove-Item $BackupFile -Force -ErrorAction SilentlyContinue
+        } catch {
+            # Attempt recovery from backup if the main script was affected
+            if (-not (Test-Path $PSCommandPath) -and (Test-Path $BackupFile)) {
+                Move-Item -Path $BackupFile -Destination $PSCommandPath -Force
+            }
+            throw $_
         }
         
         # Cleanup temp directory
@@ -559,13 +555,6 @@ function Initialize-Data {
             }
             $Global:DataLoaded = $true
         }
-    }
-
-    # Standardize 'Updates' cache if it exists for consistent key access
-    if ($Cache.ContainsKey("Updates") -and $Cache.Updates -isnot [hashtable]) {
-        $H = @{}
-        foreach ($P in $Cache.Updates.PSObject.Properties) { $H[$P.Name] = $P.Value }
-        $Cache.Updates = $H
     }
 
     if ($ShowStatus) {
@@ -1244,124 +1233,119 @@ if ([string]::IsNullOrWhiteSpace($Query)) {
     # Define widths for Help function scope
     $W_Events = 60
     Show-Help
-    exit
-}
-
-if ($Query -eq "update") {
+} elseif ($Query -eq "update") {
+    if ($null -ne $UpdateJob) { Remove-Job -Job $UpdateJob -Force }
     Update-ArcRaidersCLI
     exit
-}
-
-if ($Query -eq "events") {
+} elseif ($Query -eq "events") {
     Show-Events
-    exit
-}
-
-Initialize-Data -ShowStatus
-
-$Results = @()
-
-# 1. Search Items
-$ItemData = if ($Global:Data.Items -is [hashtable]) { $Global:Data.Items.Values } else { $Global:Data.Items.PSObject.Properties.Value }
-foreach ($Item in $ItemData) {
-    if ($Item.name.en -like "*$Query*" -or $Item.id -eq $Query) {
-        $Results += [PSCustomObject]@{ Type="Item"; Name=$Item.name.en; Data=$Item }
-    }
-}
-
-# 2. Search Quests
-$QuestData = if ($Global:Data.Quests.PSObject.Properties["value"]) { $Global:Data.Quests.value } else { $Global:Data.Quests }
-foreach ($Quest in $QuestData) {
-    if ($Quest.name.en -like "*$Query*") {
-        $Results += [PSCustomObject]@{ Type="Quest"; Name=$Quest.name.en; Data=$Quest }
-    }
-}
-
-# 3. Search Hideout
-$HideoutData = if ($Global:Data.Hideout.PSObject.Properties["value"]) { $Global:Data.Hideout.value } else { $Global:Data.Hideout }
-foreach ($Hideout in $HideoutData) {
-    if ($Hideout.name.en -like "*$Query*") {
-        $Results += [PSCustomObject]@{ Type="Hideout"; Name=$Hideout.name.en; Data=$Hideout }
-    }
-}
-
-# 4. Search Bots
-$BotData = if ($Global:Data.Bots.PSObject.Properties["value"]) { $Global:Data.Bots.value } else { $Global:Data.Bots }
-foreach ($Bot in $BotData) {
-    if ($Bot.name -like "*$Query*") {
-        $Results += [PSCustomObject]@{ Type="ARC"; Name=$Bot.name; Data=$Bot }
-    }
-}
-
-# 5. Search Projects
-$ProjData = if ($Global:Data.Projects.PSObject.Properties["value"]) { $Global:Data.Projects.value } else { $Global:Data.Projects }
-foreach ($Proj in $ProjData) {
-    if ($Proj.name.en -like "*$Query*") {
-        $Results += [PSCustomObject]@{ Type="Project"; Name=$Proj.name.en; Data=$Proj }
-    }
-}
-
-# 6. Search Skills
-$SkillData = if ($Global:Data.Skills.PSObject.Properties["value"]) { $Global:Data.Skills.value } else { $Global:Data.Skills }
-foreach ($Skill in $SkillData) {
-    if ($Skill.name.en -like "*$Query*") {
-        $Results += [PSCustomObject]@{ Type="Skill"; Name=$Skill.name.en; Data=$Skill }
-    }
-}
-
-# Sort Results Alphabetically
-$Results = @($Results | Sort-Object Name)
-
-# Result Handling
-if ($Results.Count -eq 0) {
-    Write-Ansi "No results found." $Palette.Error
-} elseif ($Results.Count -eq 1) {
-    Invoke-DisplayResult $Results[0]
 } else {
-    # Check for Auto-Select Argument
-    if ($SelectIndex -ge 0 -and $SelectIndex -lt $Results.Count) {
-        $Idx = $SelectIndex
-    } else {
-        $W_Results = 60
-        Write-BoxRow $Sym.Box.TL $Sym.Box.H $Sym.Box.TR $Palette.Border $W_Results
-        Write-ContentRow -Text "SEARCH RESULTS" -TextColor $Palette.Accent -Width $W_Results -Align "Center"
-        Write-BoxRow $Sym.Box.L $Sym.Box.H $Sym.Box.R $Palette.Border $W_Results
+    Initialize-Data -ShowStatus
 
-        for ($i=0; $i -lt $Results.Count; $i++) {
-            if ($i -ge 20) {
-                Write-ContentRow -Text "... and more" -TextColor $Palette.Subtext -Width $W_Results
-                break
-            }
-            $ResultLine = " [$i] $($Results[$i].Name) ($($Results[$i].Type))"
-            Write-ContentRow -Text $ResultLine -Width $W_Results
-        }
-        
-        Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $Palette.Border $W_Results
-        Write-Ansi "`nSelect (0-$($Results.Count - 1)): " $Palette.Accent -NoNewline
-        
-        try {
-            if ($Results.Count -le 10) {
-                # Fast selection for single-digit results
-                $Host.UI.RawUI.FlushInputBuffer()
-                $Key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-                if ($Key.Character -match "[0-9]") {
-                    $Idx = [int][string]$Key.Character
-                    Write-Host $Idx # Echo the selection
-                }
-            } else {
-                # Multi-digit support for larger result sets
-                $Selection = Read-Host
-                if ($Selection -match '^\d+$') {
-                    $Idx = [int]$Selection
-                }
-            }
-        } catch {
-            Write-Ansi "Invalid selection." $Palette.Error
+    $Results = @()
+
+    # 1. Search Items
+    $ItemData = if ($Global:Data.Items -is [hashtable]) { $Global:Data.Items.Values } else { $Global:Data.Items.PSObject.Properties.Value }
+    foreach ($Item in $ItemData) {
+        if ($Item.name.en -like "*$Query*" -or $Item.id -eq $Query) {
+            $Results += [PSCustomObject]@{ Type="Item"; Name=$Item.name.en; Data=$Item }
         }
     }
 
-    if ($null -ne $Idx -and $Idx -lt $Results.Count) {
-        Invoke-DisplayResult $Results[$Idx]
+    # 2. Search Quests
+    $QuestData = if ($Global:Data.Quests.PSObject.Properties["value"]) { $Global:Data.Quests.value } else { $Global:Data.Quests }
+    foreach ($Quest in $QuestData) {
+        if ($Quest.name.en -like "*$Query*") {
+            $Results += [PSCustomObject]@{ Type="Quest"; Name=$Quest.name.en; Data=$Quest }
+        }
+    }
+
+    # 3. Search Hideout
+    $HideoutData = if ($Global:Data.Hideout.PSObject.Properties["value"]) { $Global:Data.Hideout.value } else { $Global:Data.Hideout }
+    foreach ($Hideout in $HideoutData) {
+        if ($Hideout.name.en -like "*$Query*") {
+            $Results += [PSCustomObject]@{ Type="Hideout"; Name=$Hideout.name.en; Data=$Hideout }
+        }
+    }
+
+    # 4. Search Bots
+    $BotData = if ($Global:Data.Bots.PSObject.Properties["value"]) { $Global:Data.Bots.value } else { $Global:Data.Bots }
+    foreach ($Bot in $BotData) {
+        if ($Bot.name -like "*$Query*") {
+            $Results += [PSCustomObject]@{ Type="ARC"; Name=$Bot.name; Data=$Bot }
+        }
+    }
+
+    # 5. Search Projects
+    $ProjData = if ($Global:Data.Projects.PSObject.Properties["value"]) { $Global:Data.Projects.value } else { $Global:Data.Projects }
+    foreach ($Proj in $ProjData) {
+        if ($Proj.name.en -like "*$Query*") {
+            $Results += [PSCustomObject]@{ Type="Project"; Name=$Proj.name.en; Data=$Proj }
+        }
+    }
+
+    # 6. Search Skills
+    $SkillData = if ($Global:Data.Skills.PSObject.Properties["value"]) { $Global:Data.Skills.value } else { $Global:Data.Skills }
+    foreach ($Skill in $SkillData) {
+        if ($Skill.name.en -like "*$Query*") {
+            $Results += [PSCustomObject]@{ Type="Skill"; Name=$Skill.name.en; Data=$Skill }
+        }
+    }
+
+    # Sort Results Alphabetically
+    $Results = @($Results | Sort-Object Name)
+
+    # Result Handling
+    if ($Results.Count -eq 0) {
+        Write-Ansi "No results found." $Palette.Error
+    } elseif ($Results.Count -eq 1) {
+        Invoke-DisplayResult $Results[0]
+    } else {
+        # Check for Auto-Select Argument
+        if ($SelectIndex -ge 0 -and $SelectIndex -lt $Results.Count) {
+            $Idx = $SelectIndex
+        } else {
+            $W_Results = 60
+            Write-BoxRow $Sym.Box.TL $Sym.Box.H $Sym.Box.TR $Palette.Border $W_Results
+            Write-ContentRow -Text "SEARCH RESULTS" -TextColor $Palette.Accent -Width $W_Results -Align "Center"
+            Write-BoxRow $Sym.Box.L $Sym.Box.H $Sym.Box.R $Palette.Border $W_Results
+
+            for ($i=0; $i -lt $Results.Count; $i++) {
+                if ($i -ge 20) {
+                    Write-ContentRow -Text "... and more" -TextColor $Palette.Subtext -Width $W_Results
+                    break
+                }
+                $ResultLine = " [$i] $($Results[$i].Name) ($($Results[$i].Type))"
+                Write-ContentRow -Text $ResultLine -Width $W_Results
+            }
+            
+            Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $Palette.Border $W_Results
+            Write-Ansi "`nSelect (0-$($Results.Count - 1)): " $Palette.Accent -NoNewline
+            
+            try {
+                if ($Results.Count -le 10) {
+                    # Fast selection for single-digit results
+                    $Host.UI.RawUI.FlushInputBuffer()
+                    $Key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                    if ($Key.Character -match "[0-9]") {
+                        $Idx = [int][string]$Key.Character
+                        Write-Host $Idx # Echo the selection
+                    }
+                } else {
+                    # Multi-digit support for larger result sets
+                    $Selection = Read-Host
+                    if ($Selection -match '^\d+$') {
+                        $Idx = [int]$Selection
+                    }
+                }
+            } catch {
+                Write-Ansi "Invalid selection." $Palette.Error
+            }
+        }
+
+        if ($null -ne $Idx -and $Idx -lt $Results.Count) {
+            Invoke-DisplayResult $Results[$Idx]
+        }
     }
 }
 
@@ -1369,10 +1353,26 @@ if ($Results.Count -eq 0) {
 # POST-SEARCH ACTIONS
 # -----------------------------------------------------------------------------
 
-# Check for Updates
-if ($CurrentVersion -ne "vDEV") {
-    $NewVersion = Get-UpdateInfo
-    if ($NewVersion) { Show-UpdateBanner -NewVersion $NewVersion }
+# Check for Updates (Wait for background job)
+if ($null -ne $UpdateJob) {
+    $WaitStartTime = [DateTime]::Now
+    $Notified = $false
+    
+    while ($UpdateJob.State -eq "Running" -and ([DateTime]::Now - $WaitStartTime).TotalSeconds -lt 1.0) {
+        if (-not $Notified) {
+            Write-Ansi "Checking for updates..." $Palette.Subtext
+            $Notified = $true
+        }
+        Start-Sleep -Milliseconds 100
+    }
+
+    if ($UpdateJob.State -eq "Completed") {
+        $NewVer = Receive-Job -Job $UpdateJob
+        if ($NewVer) { Show-UpdateBanner -NewVersion $NewVer }
+    }
+    
+    # Cleanup background job
+    Remove-Job -Job $UpdateJob -Force
 }
 
 # Auto-pause if running in a transient terminal window (e.g. from a launcher)
