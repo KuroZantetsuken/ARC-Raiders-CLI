@@ -4,17 +4,38 @@ A command-line utility for looking up game data from ARC Raiders.
 
 ![Demo Video](.assets/demo.webp)
 
-## Features
+## What it does
 
-- **Quick Search**: Look up items, ARCs, quests, hideout upgrades, and skills.
-- **Crafting & Stash Analysis**: 
-  - Calculates total ingredient costs for recipes.
-  - Shows net stash space changes (slots gained/saved) when crafting.
-  - Compares item value against recycling or salvaging yields.
-- **Trader Data**: View which traders sell an item, including barter requirements and daily limits.
+I hate having to keep a browser open while playing just to look up trivial information about the game, so I made a CLI utility to do it through a terminal.
+
+This tool searches the database maintained by [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) (the same data used by [arctracker.io](https://arctracker.io)).
+
+- **Search Almost Everything**: Returns information about:
+    - Quests
+    - Items
+    - Skill Nodes
+    - Hideout Modules
+    - Projects
+    - ARC
+- **Calculates additional information for items**:
+    - Value lost when salvaging
+    - Value lost when recycling
+    - Value lost when purchasing from a trader (even some rudimentary creds calculations)
+    - Stash space gained or lost compared to recipe requirements
 - **Event Schedule**: Displays upcoming map events in your local time, color-coded by map.
-- **Smart Selection**: Interactive search results with quick number-key selection or direct index access.
-- **Automatic Updates**: Built-in update command to keep the tool up to date.
+- **Interactive Selection**: If multiple results are found, you can quickly select with number keys.
+- **Automatic Updates**: Built-in `arc update` command to keep the tool and data up to date.
+
+## PowerToys Run
+My primary way of using this is with **PowerToys Run**. Depending on your setup, you can hit `Alt+Space` any time and type `>arc <query>` to get results from anywhere.
+
+## Feedback & Testing
+
+**I am actively looking for feedback**
+
+If you find any bugs or have any suggestions, please don't hesitate to open an issue!
+
+---
 
 ## Installation
 
@@ -22,9 +43,10 @@ A command-line utility for looking up game data from ARC Raiders.
 1. Download the [latest release](https://github.com/KuroZantetsuken/ARC-Raiders-CLI/releases/latest/download/arc-raiders-cli.zip).
 2. Extract the ZIP to a folder.
 3. Double-click `install.bat` to run it.
+   - **Note**: Do not move the folder after running the install script. If you want to move it, uninstall first!
 4. Restart your terminal to enable the `arc` command.
 
-### From Source (Git)
+### From Source
 1. Clone the repository with submodules:
    ```powershell
    git clone --recursive https://github.com/KuroZantetsuken/ARC-Raiders-CLI.git
@@ -37,13 +59,14 @@ A command-line utility for looking up game data from ARC Raiders.
 Run `arc` followed by your search query.
 
 ```powershell
-arc heavy        # List items/data matching "Heavy"
-arc "to earth"   # Search for exact phrases
+arc cat          # List data matching "Cat"
+arc cat 0        # Immediately display the first result for "Cat"
+arc cat bed      # Multi-word searches work without quotes
 arc events       # View the map event schedule
 arc update       # Check for and install software updates
 ```
 
-- **Selection**: If multiple results are found, press `0`-`9` to select one.
+- **Selection**: Press `0`-`9` to select from multiple results.
 - **Direct Access**: Skip selection by adding the index: `arc shield 0`.
 
 ## Updating Data
@@ -56,7 +79,7 @@ For release builds, use `arc update` to update the entire tool including data.
 
 ## Uninstallation
 
-To remove the tool from your system PATH and delete the command alias, run `uninstall.bat`.
+To undo changes made by the install script, run `uninstall.bat`.
 
 ## Credits
 This tool uses game data provided by the [RaidTheory/arcraiders-data](https://github.com/RaidTheory/arcraiders-data) project.
