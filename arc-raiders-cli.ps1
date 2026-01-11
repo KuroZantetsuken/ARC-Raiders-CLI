@@ -45,6 +45,35 @@ param (
     [string[]]$InputArgs
 )
 
+# -----------------------------------------------------------------------------
+# PREREQUISITES
+# -----------------------------------------------------------------------------
+
+$RepoRoot = $PSScriptRoot
+$PathItems = Join-Path $RepoRoot "arcraiders-data\items"
+
+# Check for Data Submodule
+if (-not (Test-Path $PathItems)) {
+    # Only try to update if we are in a git repo
+    if (Test-Path (Join-Path $RepoRoot ".git")) {
+        Write-Host ""
+        Write-Host "[!] Data missing. Initializing submodule..." -ForegroundColor Yellow
+        try {
+            Start-Process git -ArgumentList "submodule update --init --recursive" -Wait -NoNewWindow
+            if (Test-Path $PathItems) {
+                Write-Host "[+] Data initialized. Please re-run command." -ForegroundColor Green
+            } else {
+                Write-Host "[!] Failed to initialize git submodule. Please run: git submodule update --init --recursive" -ForegroundColor Red
+            }
+        } catch {
+            Write-Host "[!] Error initializing submodule: $($_.Exception.Message)" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[!] Error: Data directory missing and not in a git repository." -ForegroundColor Red
+    }
+    exit
+}
+
 $Query = ""
 $SelectIndex = -1
 
@@ -1084,18 +1113,6 @@ function Show-Help {
     }
     
     Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $Palette.Border $W_Events
-}
-
-# Check for Data Submodule
-if (-not (Test-Path $PathItems)) {
-    Write-Ansi "`n[!] Data missing. Initializing submodule..." $Palette.Warning
-    try {
-        Start-Process git -ArgumentList "submodule update --init --recursive" -Wait -NoNewWindow
-        Write-Ansi "[+] Data initialized. Please re-run command.`n" $Palette.Success
-    } catch {
-        Write-Ansi "[!] Failed to initialize git submodule. Please run: git submodule update --init --recursive" $Palette.Error
-    }
-    exit
 }
 
 if ([string]::IsNullOrWhiteSpace($Query)) {
