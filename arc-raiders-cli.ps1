@@ -647,9 +647,6 @@ function Show-Item {
     $Badge2 = Get-FormattedBadge -Text $Item.rarity -ColorKey $Item.rarity
     $Lines += ($Indent + "$Badge1 $Badge2")
     
-    # Name
-    $Lines += (Get-WrappedText -Text ($Item.name.en.ToUpper()) -Indent $Indent)
-    
     # Description
     if ($Item.description.en) {
         $Lines += (Get-WrappedText -Text $Item.description.en -Indent $Indent)
@@ -827,7 +824,7 @@ function Show-Item {
         }
     }
     
-    Show-Card -Title $null -Subtitle $null -Content $Lines -ThemeColor $RarityColor -BorderColor $RarityColor
+    Show-Card -Title $Item.name.en -Subtitle "Item" -Content $Lines -ThemeColor $RarityColor -BorderColor $RarityColor
 }
 
 function Show-Bot {
@@ -842,9 +839,6 @@ function Show-Bot {
     $B1 = Get-FormattedBadge -Text $Bot.type -ColorKey $ThColor
     $B2 = Get-FormattedBadge -Text $Bot.threat -ColorKey $ThColor
     $Lines += ($Indent + "$B1 $B2")
-    
-    # Name
-    $Lines += ($Indent + $Bot.name)
     
     # Desc
     if ($Bot.description) { $Lines += (Get-WrappedText $Bot.description -Indent $Indent) }
@@ -875,7 +869,7 @@ function Show-Bot {
         }
     }
     
-    Show-Card -Title $null -Content $Lines -ThemeColor $Palette[$ThColor] -BorderColor $Palette[$ThColor]
+    Show-Card -Title $Bot.name -Subtitle "ARC" -Content $Lines -ThemeColor $Palette[$ThColor] -BorderColor $Palette[$ThColor]
 }
 
 function Show-Project {
@@ -924,7 +918,6 @@ function Show-Skill {
 
     # Badge
     $Lines += ($Indent + (Get-FormattedBadge -Text $Skill.category -ColorKey $CatColorKey))
-    $Lines += ($Indent + $Skill.name.en.ToUpper())
     
     if ($Skill.description.en) {
         $Lines += (Get-WrappedText $Skill.description.en -Indent $Indent)
@@ -938,7 +931,7 @@ function Show-Skill {
         $Lines += ($Indent + "MAX POINTS: $($Skill.maxPoints)")
     }
     
-    Show-Card -Title $null -Content $Lines -ThemeColor $CatColor -BorderColor $CatColor
+    Show-Card -Title $Skill.name.en -Subtitle "Skill" -Content $Lines -ThemeColor $CatColor -BorderColor $CatColor
 }
 
 function Show-Events {
@@ -1113,10 +1106,10 @@ function Show-Quest {
 
 function Show-Hideout {
     param ($Hideout)
-    $C = @("UPGRADES:")
+    $C = @()
     foreach($L in $Hideout.levels){
-        $C += "---"
-        $C += " Level $($L.level)"
+        if ($C.Count -gt 0) { $C += "---" }
+        $C += "LEVEL $($L.level):"
         if ($L.requirementItemIds) {
             foreach ($Req in $L.requirementItemIds) {
                 $C += "  - $($Req.quantity)x $(Get-ItemName $Req.itemId)"
@@ -1264,14 +1257,21 @@ if ($Results.Count -eq 0) {
     if ($SelectIndex -ge 0 -and $SelectIndex -lt $Results.Count) {
         $Idx = $SelectIndex
     } else {
-        Write-Ansi "SEARCH RESULTS" $Palette.Accent
+        $W_Results = 60
+        Write-BoxRow $Sym.Box.TL $Sym.Box.H $Sym.Box.TR $Palette.Border $W_Results
+        Write-ContentRow -Text "SEARCH RESULTS" -TextColor $Palette.Accent -Width $W_Results -Align "Center"
+        Write-BoxRow $Sym.Box.L $Sym.Box.H $Sym.Box.R $Palette.Border $W_Results
+
         for ($i=0; $i -lt $Results.Count; $i++) {
-            if ($i -ge 20) { Write-Ansi "... and more" $Palette.Subtext; break }
-            Write-Ansi " [$i] " $Palette.Accent -NoNewline
-            Write-Ansi "$($Results[$i].Name) " $Palette.Text -NoNewline
-            Write-Ansi "($($Results[$i].Type))" $Palette.Subtext
+            if ($i -ge 20) {
+                Write-ContentRow -Text "... and more" -TextColor $Palette.Subtext -Width $W_Results
+                break
+            }
+            $ResultLine = " [$i] $($Results[$i].Name) ($($Results[$i].Type))"
+            Write-ContentRow -Text $ResultLine -Width $W_Results
         }
         
+        Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $Palette.Border $W_Results
         Write-Ansi "`nSelect (0-$($Results.Count - 1)): " $Palette.Accent -NoNewline
         try {
             $Host.UI.RawUI.FlushInputBuffer()
