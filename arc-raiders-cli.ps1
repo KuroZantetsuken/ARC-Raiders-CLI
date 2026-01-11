@@ -191,8 +191,9 @@ function Import-JsonFast {
     if (-not (Test-Path $Path)) { return $null }
     try {
         $Content = [System.IO.File]::ReadAllText($Path)
-        return $Content | ConvertFrom-Json
+        return $Content | ConvertFrom-Json -ErrorAction Stop
     } catch {
+        Write-Ansi "Warning: Failed to parse JSON at $Path`: $($_.Exception.Message)" $Palette.Warning
         return $null
     }
 }
@@ -375,7 +376,9 @@ function Get-UpdateInfo {
         if ($VerToCache -ne $CurrentVersion) {
             return $VerToCache
         }
-    } catch {}
+    } catch {
+        # Silently fail for update checks
+    }
     return $null
 }
 
@@ -409,27 +412,53 @@ function Update-ArcRaidersCLI {
         }
 
         Write-Ansi "Updating to $($Latest.tag_name)..." $Palette.Accent
-        $ZipPath = Join-Path $env:TEMP "arc-raiders-cli.zip"
+        
+        # Use a local temp directory for reliability
+        $TempDir = Join-Path $RepoRoot ".update_tmp"
+        if (Test-Path $TempDir) { Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue }
+        New-Item -Path $TempDir -ItemType Directory -Force | Out-Null
+        
+        $ZipPath = Join-Path $TempDir "update.zip"
+        $ExtPath = Join-Path $TempDir "extracted"
         
         Write-Ansi "Downloading update..." $Palette.Subtext
         Invoke-WebRequest -Uri $Asset.browser_download_url -OutFile $ZipPath -ErrorAction Stop
         
-        Write-Ansi "Extracting files to $RepoRoot..." $Palette.Subtext
-        # We unzip to a temp folder first to avoid locking issues then copy
-        $TempExt = Join-Path $env:TEMP "arc_update_ext"
-        if (Test-Path $TempExt) { Remove-Item $TempExt -Recurse -Force }
-        Expand-Archive -Path $ZipPath -DestinationPath $TempExt -Force
+        Write-Ansi "Extracting files..." $Palette.Subtext
+        Expand-Archive -Path $ZipPath -DestinationPath $ExtPath -Force -ErrorAction Stop
         
-        # Copy files over
-        Copy-Item -Path "$TempExt\*" -Destination $RepoRoot -Recurse -Force
+        # Verification: Check if extracted content looks correct before overwriting
+        if (-not (Test-Path (Join-Path $ExtPath "arc-raiders-cli.ps1"))) {
+            throw "Downloaded update is missing the main script file. Update aborted for safety."
+        }
+
+        Write-Ansi "Installing update to $RepoRoot..." $Palette.Subtext
+        # We copy files individually to ensure we don't accidentally wipe unexpected files
+        # and we preserve the .cache file
+        Get-ChildItem -Path $ExtPath -Recurse | ForEach-Object {
+            $RelativePath = $_.FullName.Substring($ExtPath.Length + 1)
+            $Dest = Join-Path $RepoRoot $RelativePath
+            if ($_.PSIsContainer) {
+                if (-not (Test-Path $Dest)) { New-Item -Path $Dest -ItemType Directory -Force | Out-Null }
+            } else {
+                # Don't overwrite the cache file
+                if ($_.Name -ne ".cache") {
+                    Copy-Item -Path $_.FullName -Destination $Dest -Force
+                }
+            }
+        }
         
-        # Cleanup
-        Remove-Item $ZipPath -Force
-        Remove-Item $TempExt -Recurse -Force
+        # Cleanup temp directory
+        Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
         
-        Write-Ansi "Update complete! Please restart the script." $Palette.Success
+        Write-Ansi "Update complete! Version $($Latest.tag_name) is now installed." $Palette.Success
+        Write-Ansi "Please restart your terminal or session if you experience issues." $Palette.Subtext
     } catch {
         Write-Ansi "Update failed: $($_.Exception.Message)" $Palette.Error
+        if ($null -ne $TempDir -and (Test-Path $TempDir)) {
+            Write-Ansi "Cleanup: Removing temporary files..." $Palette.Subtext
+            Remove-Item $TempDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
