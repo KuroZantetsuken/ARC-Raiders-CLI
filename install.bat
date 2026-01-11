@@ -17,7 +17,7 @@ echo [*] Creating 'arc.bat' alias...
 echo [*] Adding '%ScriptPath%' to User PATH...
 
 REM PowerShell command to safely add the directory to the user's PATH
-powershell -Command "$UserPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not ($UserPath -split ';' | Where-Object { $_ -eq '%ScriptPath%' })) { $NewPath = ($UserPath.TrimEnd(';') + ';%ScriptPath%').Trim(';'); [Environment]::SetEnvironmentVariable('Path', $NewPath, 'User'); echo '[+] PATH updated successfully.'; echo '[!] NOTE: You must restart your terminal for this to take effect.'; } else { echo '[+] Current directory is already in PATH.'; }"
+powershell -Command "$UserPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not ($UserPath -split ';' | Where-Object { $_ -eq '%ScriptPath%' })) { $NewPath = ($UserPath.TrimEnd(';') + ';%ScriptPath%').Trim(';'); [Environment]::SetEnvironmentVariable('Path', $NewPath, 'User'); echo '[+] User PATH updated successfully.'; echo '[!] PLEASE NOTE: You must restart your terminal session for these changes to take effect.'; } else { echo '[+] Current directory is already in the User PATH.'; }"
 
 echo.
 echo Installation Complete!

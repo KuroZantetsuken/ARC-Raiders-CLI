@@ -16,18 +16,17 @@ This tool searches the database maintained by [RaidTheory/arcraiders-data](https
     - Skill Nodes
     - Hideout Modules
     - Projects
-    - ARC
+    - ARCs
 - **Calculates additional information for items**:
-    - Value lost when salvaging
-    - Value lost when recycling
-    - Value lost when purchasing from a trader (even some rudimentary creds calculations)
+    - Value delta when salvaging or recycling
+    - Price comparison when purchasing from a trader (including Credits-to-Coins conversion rates)
     - Stash space gained or lost compared to recipe requirements
 - **Event Schedule**: Displays upcoming map events in your local time, color-coded by map.
 - **Interactive Selection**: If multiple results are found, you can quickly select with number keys.
 - **Automatic Updates**: Built-in `arc update` command to keep the tool and data up to date.
 
 ## PowerToys Run
-My primary way of using this is with **PowerToys Run**. Depending on your setup, you can hit `Alt+Space` any time and type `>arc <query>` to get results from anywhere.
+My primary way of using this is with **PowerToys Run**. Depending on your setup, you can hit `ALT+SPACE` at any time and type `>arc <query>` to get results from anywhere.
 
 ## Feedback & Testing
 

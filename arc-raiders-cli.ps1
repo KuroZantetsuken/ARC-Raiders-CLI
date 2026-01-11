@@ -24,7 +24,7 @@
 
 .EXAMPLE
     arc events
-    Show the next occurance for each event type.
+    Show the next occurrence for each event type.
 
 .EXAMPLE
     arc update
@@ -342,12 +342,20 @@ function Get-UpdateInfo {
     $UpdateCache = if ($Cache.Updates) { $Cache.Updates } else { @{} }
     
     # 1. Check if we have a cached update notification
+    $ValidLastCheck = $false
+    if ($UpdateCache.LastCheck) {
+        try {
+            $LastCheckDate = [DateTime]$UpdateCache.LastCheck
+            if ($LastCheckDate -gt $Now.AddHours(-24)) { $ValidLastCheck = $true }
+        } catch {}
+    }
+
     if ($UpdateCache.LatestVersion -and $UpdateCache.LatestVersion -ne $CurrentVersion) {
         # Show cached update if last check was within 24h
-        if ($UpdateCache.LastCheck -and ([DateTime]$UpdateCache.LastCheck) -gt $Now.AddHours(-24)) {
+        if ($ValidLastCheck) {
             return $UpdateCache.LatestVersion
         }
-    } elseif ($UpdateCache.LastCheck -and ([DateTime]$UpdateCache.LastCheck) -gt $Now.AddHours(-24)) {
+    } elseif ($ValidLastCheck) {
         return $null
     }
 
@@ -377,8 +385,7 @@ function Get-UpdateInfo {
             return $VerToCache
         }
     } catch {
-        # Silently fail for update checks to avoid annoying the user during normal operation
-        # but we could log to a file here if needed.
+        # Silently fail for update checks to avoid interrupting normal operation.
     }
     return $null
 }
@@ -434,8 +441,7 @@ function Update-ArcRaidersCLI {
         }
 
         Write-Ansi "Installing update to $RepoRoot..." $Palette.Subtext
-        # We copy files individually to ensure we don't accidentally wipe unexpected files
-        # and we preserve the .cache file
+        # Copy files individually to preserve the directory structure while protecting local files (like .cache)
         Get-ChildItem -Path $ExtPath -Recurse | ForEach-Object {
             $RelativePath = $_.FullName.Substring($ExtPath.Length + 1)
             $Dest = Join-Path $RepoRoot $RelativePath
@@ -510,7 +516,7 @@ function Initialize-Data {
     }
 
     if ($ShowStatus) {
-        $StatusMsg = if ($NeedsRebuild -and -not $Cache.Data) { " (Building Cache)" } elseif ($NeedsRebuild) { " (Updating Cache)" } else { "" }
+        $StatusMsg = if ($NeedsRebuild -and -not $Cache.Data) { " (building cache)" } elseif ($NeedsRebuild) { " (updating cache)" } else { "" }
         Write-Ansi "Searching$StatusMsg..." $Palette.Subtext
     }
 
