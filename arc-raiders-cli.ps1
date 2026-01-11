@@ -1163,7 +1163,7 @@ foreach ($Skill in $Global:Data.Skills) {
 }
 
 # Sort Results Alphabetically
-$Results = $Results | Sort-Object Name
+$Results = @($Results | Sort-Object Name)
 
 # Result Handling
 if ($Results.Count -eq 0) {
