@@ -524,7 +524,24 @@ function Initialize-Data {
         
         # If directories look okay, we trust the cache (avoids recursive file scan)
         if (-not $NeedsRebuild) {
-            $Global:Data = $Cache.Data
+            # Standardize Global:Data to hashtable for consistent searching
+            $DataObj = $Cache.Data
+            if ($DataObj -isnot [hashtable]) {
+                $H = @{}
+                foreach ($P in $DataObj.PSObject.Properties) {
+                    $Val = $P.Value
+                    # Standardize the Items collection specifically as it's used as a map
+                    if ($P.Name -eq "Items" -and $Val -isnot [hashtable]) {
+                        $ItemsH = @{}
+                        foreach ($ItemP in $Val.PSObject.Properties) { $ItemsH[$ItemP.Name] = $ItemP.Value }
+                        $Val = $ItemsH
+                    }
+                    $H[$P.Name] = $Val
+                }
+                $Global:Data = $H
+            } else {
+                $Global:Data = $DataObj
+            }
             $Global:DataLoaded = $true
         }
     }
@@ -759,18 +776,16 @@ function Show-Item {
     
     # Drops from Bots
     $DroppingBots = @()
-    $BotData = if ($Global:Data.Bots.PSObject -and $Global:Data.Bots.PSObject.Properties['value']) { $Global:Data.Bots.value } else { $Global:Data.Bots }
-    if ($BotData) {
-        foreach ($Bot in $BotData) {
+    if ($Global:Data.Bots) {
+        foreach ($Bot in $Global:Data.Bots) {
             if ($Bot.drops -contains $Item.id) { $DroppingBots += $Bot.name }
         }
     }
 
     # Rewards from Quests
     $QuestRewards = @()
-    $QuestData = if ($Global:Data.Quests.PSObject -and $Global:Data.Quests.PSObject.Properties['value']) { $Global:Data.Quests.value } else { $Global:Data.Quests }
-    if ($QuestData) {
-        foreach ($Quest in $QuestData) {
+    if ($Global:Data.Quests) {
+        foreach ($Quest in $Global:Data.Quests) {
             if ($Quest.grantedItemIds -and ($Quest.grantedItemIds.itemId -contains $Item.id)) {
                 $QuestRewards += $Quest.name.en
             }
@@ -1229,7 +1244,7 @@ Initialize-Data -ShowStatus
 $Results = @()
 
 # 1. Search Items
-$ItemData = if ($Global:Data.Items.PSObject) { $Global:Data.Items.PSObject.Properties.Value } else { $Global:Data.Items.Values }
+$ItemData = if ($Global:Data.Items -is [hashtable]) { $Global:Data.Items.Values } else { $Global:Data.Items.PSObject.Properties.Value }
 foreach ($Item in $ItemData) {
     if ($Item.name.en -like "*$Query*" -or $Item.id -eq $Query) {
         $Results += [PSCustomObject]@{ Type="Item"; Name=$Item.name.en; Data=$Item }
