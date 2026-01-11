@@ -1274,13 +1274,24 @@ if ($Results.Count -eq 0) {
         Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $Palette.Border $W_Results
         Write-Ansi "`nSelect (0-$($Results.Count - 1)): " $Palette.Accent -NoNewline
         try {
-            $Host.UI.RawUI.FlushInputBuffer()
-            $Key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-            if ($Key.Character -match "[0-9]") {
-                $Idx = [int][string]$Key.Character
-                Write-Host $Idx
+            if ($Results.Count -le 10) {
+                # Fast selection for single-digit results
+                $Host.UI.RawUI.FlushInputBuffer()
+                $Key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                if ($Key.Character -match "[0-9]") {
+                    $Idx = [int][string]$Key.Character
+                    Write-Host $Idx # Echo the selection
+                }
+            } else {
+                # Multi-digit support for larger result sets
+                $Selection = Read-Host
+                if ($Selection -match '^\d+$') {
+                    $Idx = [int]$Selection
+                }
             }
-        } catch {}
+        } catch {
+            Write-Ansi "Invalid selection." $Palette.Error
+        }
     }
 
     if ($null -ne $Idx -and $Idx -lt $Results.Count) {
