@@ -704,7 +704,10 @@ function Show-Item {
         }
         $Lines += " COST: $($Sym.Currency) $Cost $(Format-DiffString ($Val - $Cost))"
         $Delta = Get-StashSpaceDelta -Item $Item
-        if ($null -ne $Delta) { $Lines += " SPACE: {0:0.##} slots $(Format-DiffString (-$Delta))" -f $Delta }
+        if ($null -ne $Delta) {
+            $DeltaColor = if ($Delta -le 0) { $Palette.Success } else { $Palette.Error }
+            $Lines += " SPACE: $Esc[${DeltaColor}m{0:0.##}$Esc[0m slots $(Format-DiffString (-$Delta))" -f $Delta
+        }
     }
     
     # Recycling & Salvaging
