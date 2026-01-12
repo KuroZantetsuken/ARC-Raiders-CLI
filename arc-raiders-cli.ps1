@@ -181,9 +181,9 @@ function Write-Ansi {
 
 function Get-DisplayLength {
     param ([string]$Text)
+    if (-not $Text -or $Text.IndexOf([char]27) -lt 0) { return $Text.Length }
     # Remove ANSI codes to calculate visual length
-    $Clean = $Text -replace "\x1B\[[0-9;]*[a-zA-Z]", ""
-    return $Clean.Length
+    return ($Text -replace "\x1B\[[0-9;]*[a-zA-Z]", "").Length
 }
 
 function ConvertTo-Hashtable {
@@ -202,9 +202,17 @@ function Import-JsonFast {
     if (-not (Test-Path $Path)) { return $null }
     try {
         $Content = [System.IO.File]::ReadAllText($Path)
-        $Data = $Content | ConvertFrom-Json -ErrorAction Stop
+        
+        $Data = if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $Content | ConvertFrom-Json -AsHashtable -ErrorAction Stop
+        } else {
+            $Content | ConvertFrom-Json -ErrorAction Stop
+        }
         
         # Handle PowerShell's occasional 'value' property wrapping for collections
+        if ($null -ne $Data -and $Data -is [hashtable] -and $Data.ContainsKey("value") -and $Data.ContainsKey("Count")) {
+            return $Data.value
+        }
         if ($null -ne $Data -and $null -ne $Data.PSObject -and $null -ne $Data.PSObject.Properties["value"] -and $null -ne $Data.PSObject.Properties["Count"]) {
             return $Data.value
         }
@@ -515,9 +523,31 @@ function Initialize-Data {
         $Cache = @{}
 
         # Load from files
-        if (Test-Path $PathItems)   { [System.IO.Directory]::GetFiles($PathItems, "*.json")  | ForEach-Object { $J = Import-JsonFast $_; if ($J) { $Global:Data.Items[$J.id] = $J } } }
-        if (Test-Path $PathQuests)  { $Global:Data.Quests  = @([System.IO.Directory]::GetFiles($PathQuests, "*.json")  | ForEach-Object { Import-JsonFast $_ } | Where-Object { $_ }) }
-        if (Test-Path $PathHideout) { $Global:Data.Hideout = @([System.IO.Directory]::GetFiles($PathHideout, "*.json") | ForEach-Object { Import-JsonFast $_ } | Where-Object { $_ }) }
+        if (Test-Path $PathItems) {
+            $Files = [System.IO.Directory]::GetFiles($PathItems, "*.json")
+            foreach ($File in $Files) {
+                $J = Import-JsonFast $File
+                if ($J) { $Global:Data.Items[$J.id] = $J }
+            }
+        }
+        if (Test-Path $PathQuests) {
+            $Files = [System.IO.Directory]::GetFiles($PathQuests, "*.json")
+            $List = [System.Collections.Generic.List[psobject]]::new()
+            foreach ($File in $Files) {
+                $J = Import-JsonFast $File
+                if ($J) { $List.Add($J) }
+            }
+            $Global:Data.Quests = $List.ToArray()
+        }
+        if (Test-Path $PathHideout) {
+            $Files = [System.IO.Directory]::GetFiles($PathHideout, "*.json")
+            $List = [System.Collections.Generic.List[psobject]]::new()
+            foreach ($File in $Files) {
+                $J = Import-JsonFast $File
+                if ($J) { $List.Add($J) }
+            }
+            $Global:Data.Hideout = $List.ToArray()
+        }
         
         $Global:Data.Bots     = @(Import-JsonFast $PathBots)
         $Global:Data.Projects = @(Import-JsonFast $PathProjects)
@@ -945,19 +975,22 @@ if ([string]::IsNullOrWhiteSpace($Query)) {
 
     # Generic Search
     $SearchConfig = @(
-        @{ Data = $Global:Data.Items.Values; Type = "Item";    Name = { $_.name.en }; Id = "id" }
-        @{ Data = $Global:Data.Quests;       Type = "Quest";   Name = { $_.name.en } }
-        @{ Data = $Global:Data.Hideout;      Type = "Hideout"; Name = { $_.name.en } }
-        @{ Data = $Global:Data.Bots;         Type = "ARC";     Name = { $_.name } }
-        @{ Data = $Global:Data.Projects;     Type = "Project"; Name = { $_.name.en } }
-        @{ Data = $Global:Data.Skills;       Type = "Skill";   Name = { $_.name.en } }
+        @{ Data = $Global:Data.Items.Values; Type = "Item";    Name = { $args[0].name.en }; Id = "id" }
+        @{ Data = $Global:Data.Quests;       Type = "Quest";   Name = { $args[0].name.en } }
+        @{ Data = $Global:Data.Hideout;      Type = "Hideout"; Name = { $args[0].name.en } }
+        @{ Data = $Global:Data.Bots;         Type = "ARC";     Name = { $args[0].name } }
+        @{ Data = $Global:Data.Projects;     Type = "Project"; Name = { $args[0].name.en } }
+        @{ Data = $Global:Data.Skills;       Type = "Skill";   Name = { $args[0].name.en } }
     )
 
-    foreach ($Cfg in $SearchConfig) {
+    $Results = foreach ($Cfg in $SearchConfig) {
+        $GetName = $Cfg.Name
+        $HasId = $null -ne $Cfg.Id
+        $IdProp = $Cfg.Id
         foreach ($Obj in $Cfg.Data) {
-            $Val = $Obj | ForEach-Object $Cfg.Name
-            if ($Val -and ($Val -like "*$Query*" -or ($Cfg.Id -and $Obj.$($Cfg.Id) -eq $Query))) {
-                $Results += [PSCustomObject]@{ Type = $Cfg.Type; Name = $Val; Data = $Obj }
+            $Val = & $GetName $Obj
+            if ($Val -and ($Val -like "*$Query*" -or ($HasId -and $Obj.$IdProp -eq $Query))) {
+                [PSCustomObject]@{ Type = $Cfg.Type; Name = $Val; Data = $Obj }
             }
         }
     }
