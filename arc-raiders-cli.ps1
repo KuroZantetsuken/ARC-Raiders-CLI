@@ -184,8 +184,10 @@ function Write-Ansi {
 function Get-DisplayLength {
     param ([string]$Text)
     if (-not $Text -or $Text.IndexOf([char]27) -lt 0) { return $Text.Length }
-    # Remove ANSI codes to calculate visual length
-    return ($Text -replace "\x1B\[[0-9;]*[a-zA-Z]", "").Length
+    # Remove ANSI codes (CSI and OSC) to calculate visual length
+    $T = $Text -replace "\x1B\[[0-9;]*[a-zA-Z]", ""
+    $T = $T -replace "\x1B\].*?\x1B\\", ""
+    return $T.Length
 }
 
 function ConvertTo-Hashtable {
@@ -270,8 +272,14 @@ function Get-WrappedText {
             
             # Force split very long words
             while ((Get-DisplayLength $CurrentLine) -gt $Width) {
-                $Lines += ($Indent + $CurrentLine.Substring(0, $Width))
-                $CurrentLine = $CurrentLine.Substring($Width)
+                $BreakPoint = $Width
+                $Segment = $CurrentLine.Substring(0, $Width)
+                # For URLs or long paths, try to break at natural delimiters (/ , ? &)
+                $LastDelim = $Segment.LastIndexOfAny(@('/', '?', '&', '='))
+                if ($LastDelim -gt 15) { $BreakPoint = $LastDelim + 1 }
+                
+                $Lines += ($Indent + $CurrentLine.Substring(0, $BreakPoint))
+                $CurrentLine = $CurrentLine.Substring($BreakPoint)
             }
         }
     }
@@ -305,6 +313,10 @@ function Write-ContentRow {
         [string]$Align = "Left"
     )
     $VisLen = Get-DisplayLength $Text
+    if ($VisLen -gt ($Width - 2)) {
+        $Text = $Text.Substring(0, [math]::Max(0, $Width - 5)) + "..."
+        $VisLen = Get-DisplayLength $Text
+    }
     $PadTotal = [math]::Max(0, $Width - 2 - $VisLen)
     
     $PadL = switch ($Align) { "Right" { $PadTotal }; "Center" { [math]::Floor($PadTotal / 2) }; default { 0 } }
@@ -334,7 +346,10 @@ function Show-Card {
     }
     
     if ($Subtitle) {
-        Write-ContentRow -Text $Subtitle -TextColor $Palette.Subtext -BorderColor $BorderColor -Width $Width
+        $SubLines = Get-WrappedText -Text $Subtitle -Width ($Width - 4) -Indent ""
+        foreach ($SL in $SubLines) {
+            Write-ContentRow -Text $SL.Trim() -TextColor $Palette.Subtext -BorderColor $BorderColor -Width $Width
+        }
     }
     
     foreach ($Line in $Content) {
@@ -351,14 +366,15 @@ function Show-Card {
 
 function Show-UpdateBanner {
     param ($NewVersion, $Url)
+    $DisplayUrl = if ($Url) { $Url } else { "https://github.com/KuroZantetsuken/ARC-Raiders-CLI" }
+    Write-Ansi "`n$DisplayUrl" $Palette.Subtext
     $Lines = @(
         "A new update is available: $NewVersion",
         "Your current version: $CurrentVersion",
         "",
         "Run 'arc update' to install it automatically."
     )
-    $DisplayUrl = if ($Url) { $Url } else { "https://github.com/KuroZantetsuken/ARC-Raiders-CLI" }
-    Show-Card -Title "UPDATE AVAILABLE" -Subtitle $DisplayUrl -Content $Lines -ThemeColor $Palette.Warning -BorderColor $Palette.Warning
+    Show-Card -Title "UPDATE AVAILABLE" -Content $Lines -ThemeColor $Palette.Warning -BorderColor $Palette.Warning
 }
 
 function Update-ArcRaidersCLI {
@@ -380,11 +396,27 @@ function Update-ArcRaidersCLI {
         }
 
         Write-Ansi "Updating to $($Latest.tag_name)..." $Palette.Accent
+
+        # Enable modern inline progress if supported (PowerShell 7.2+)
+        if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -ge 2) {
+            $PSStyle.Formatting.ProgressStyle = 'Inline'
+        }
         
         # Display Changelog
         if ($Latest.body) {
             $ChangelogLines = @()
             $RawLines = $Latest.body -split "`r?`n"
+            
+            # Robustly trim automated release notes and trailing whitespace
+            $NoteIdx = -1
+            for ($i = $RawLines.Count - 1; $i -ge 0; $i--) {
+                if ($RawLines[$i] -like "*[!NOTE]*") { $NoteIdx = $i; break }
+            }
+            if ($NoteIdx -ne -1) { $RawLines = $RawLines[0..($NoteIdx - 1)] }
+            while ($RawLines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($RawLines[-1])) {
+                $RawLines = $RawLines[0..($RawLines.Count - 2)]
+            }
+
             foreach ($Line in $RawLines) {
                 if ([string]::IsNullOrWhiteSpace($Line)) { $ChangelogLines += ""; continue }
                 $ChangelogLines += Get-WrappedText -Text $Line -Indent " "
@@ -393,7 +425,8 @@ function Update-ArcRaidersCLI {
             if ($ChangelogLines.Count -gt 20) {
                 $ChangelogLines = $ChangelogLines[0..18] + @("---", " ... and more (see GitHub for full notes)")
             }
-            Show-Card -Title "RELEASE NOTES" -Subtitle $Latest.html_url -Content $ChangelogLines -ThemeColor $Palette.Accent -BorderColor $Palette.Border
+            Write-Ansi "`n$($Latest.html_url)" $Palette.Subtext
+            Show-Card -Title "RELEASE NOTES" -Content $ChangelogLines -ThemeColor $Palette.Accent -BorderColor $Palette.Border
         }
 
         # Use a local temp directory for reliability
@@ -409,7 +442,7 @@ function Update-ArcRaidersCLI {
         
         Write-Ansi "Extracting files..." $Palette.Subtext
         Expand-Archive -Path $ZipPath -DestinationPath $ExtPath -Force -ErrorAction Stop
-        
+
         # Verification: Check if extracted content looks correct before overwriting
         if (-not (Test-Path (Join-Path $ExtPath "arc-raiders-cli.ps1"))) {
             throw "Downloaded update is missing the main script file. Update aborted for safety."
@@ -984,7 +1017,6 @@ if ([string]::IsNullOrWhiteSpace($Query)) {
 } elseif ($Query -eq "update") {
     if ($null -ne $UpdateJob) { Remove-Job -Job $UpdateJob -Force }
     Update-ArcRaidersCLI
-    exit
 } elseif ($Query -eq "events") {
     Show-Events
 } else {
@@ -1069,9 +1101,9 @@ if ($null -ne $UpdateJob) {
     $WaitStartTime = [DateTime]::Now
     $Notified = $false
     
-    while ($UpdateJob.State -eq "Running" -and ([DateTime]::Now - $WaitStartTime).TotalSeconds -lt 1.0) {
+    while ($UpdateJob.State -eq "Running" -and ([DateTime]::Now - $WaitStartTime).TotalSeconds -lt 2.0) {
         if (-not $Notified) {
-            Write-Ansi "Checking for updates..." $Palette.Subtext
+            Write-Ansi "Checking for updates..." $Palette.Subtext -NoNewline
             $Notified = $true
         }
         Start-Sleep -Milliseconds 100
@@ -1080,10 +1112,17 @@ if ($null -ne $UpdateJob) {
     if ($UpdateJob.State -eq "Completed") {
         $UpdateInfo = Receive-Job -Job $UpdateJob
         if ($UpdateInfo -and $UpdateInfo.Version) {
+            if ($Notified) { Write-Host "" }
             Show-UpdateBanner -NewVersion $UpdateInfo.Version -Url $UpdateInfo.Url
         } elseif ($UpdateInfo -is [string]) {
+            if ($Notified) { Write-Host "" }
             Show-UpdateBanner -NewVersion $UpdateInfo
+        } elseif ($Notified) {
+            # Clear the "Checking for updates..." line if no update found
+            Write-Host "`r$([char]27)[K" -NoNewline
         }
+    } else {
+        if ($Notified) { Write-Ansi " (timed out)" $Palette.Subtext }
     }
     
     # Cleanup background job
