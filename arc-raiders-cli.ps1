@@ -478,12 +478,21 @@ function Initialize-Data {
         $CacheTime = (Get-Item $GlobalCache).LastWriteTime
         
         # Fast check: check data sources and the script itself for changes
-        $WatchPaths = @($PSCommandPath, $DataDir, $PathItems, $PathQuests, $PathHideout, $PathBots, $PathProjects, $PathSkills, $PathTrades)
-        $NeedsRebuild = $false
-        foreach ($Path in $WatchPaths) {
-            if ((Test-Path $Path) -and (Get-Item $Path).LastWriteTime -gt $CacheTime) {
+        $NeedsRebuild = (Get-Item $PSCommandPath).LastWriteTime -gt $CacheTime
+        
+        if (-not $NeedsRebuild) {
+            # Check for any modified JSON files in the data directory recursively
+            try {
+                $LatestDataTime = [DateTime]::MinValue
+                $DataFiles = [System.IO.Directory]::GetFiles($DataDir, "*.json", [System.IO.SearchOption]::AllDirectories)
+                foreach ($File in $DataFiles) {
+                    $Time = [System.IO.File]::GetLastWriteTime($File)
+                    if ($Time -gt $LatestDataTime) { $LatestDataTime = $Time }
+                }
+                if ($LatestDataTime -gt $CacheTime) { $NeedsRebuild = $true }
+            } catch {
+                # Fallback to rebuild if file inspection fails
                 $NeedsRebuild = $true
-                break
             }
         }
         
