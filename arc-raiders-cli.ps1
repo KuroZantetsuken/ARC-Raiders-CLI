@@ -1015,7 +1015,10 @@ function Show-Help {
 if ([string]::IsNullOrWhiteSpace($Query)) {
     Show-Help
 } elseif ($Query -eq "update") {
-    if ($null -ne $UpdateJob) { Remove-Job -Job $UpdateJob -Force }
+    if ($null -ne $UpdateJob) {
+        Remove-Job -Job $UpdateJob -Force
+        $UpdateJob = $null
+    }
     Update-ArcRaidersCLI
 } elseif ($Query -eq "events") {
     Show-Events
