@@ -183,7 +183,8 @@ function Write-Ansi {
 
 function Get-DisplayLength {
     param ([string]$Text)
-    if (-not $Text -or $Text.IndexOf([char]27) -lt 0) { return $Text.Length }
+    if ([string]::IsNullOrEmpty($Text)) { return 0 }
+    if ($Text.IndexOf([char]27) -lt 0) { return $Text.Length }
     # Remove ANSI codes (CSI and OSC) to calculate visual length
     $T = $Text -replace "\x1B\[[0-9;]*[a-zA-Z]", ""
     $T = $T -replace "\x1B\].*?\x1B\\", ""
@@ -195,7 +196,7 @@ function ConvertTo-Hashtable {
     if ($null -eq $Object) { return @{} }
     if ($Object -is [hashtable]) { return $Object }
     $H = @{}
-    if ($null -ne $Object.PSObject) {
+    if ($null -ne $Object -and $null -ne $Object.PSObject) {
         foreach ($P in $Object.PSObject.Properties) { $H[$P.Name] = $P.Value }
     }
     return $H
@@ -206,18 +207,10 @@ function Import-JsonFast {
     if (-not (Test-Path $Path)) { return $null }
     try {
         $Content = [System.IO.File]::ReadAllText($Path)
-        
-        $Data = if ($PSVersionTable.PSVersion.Major -ge 6) {
-            $Content | ConvertFrom-Json -AsHashtable -ErrorAction Stop
-        } else {
-            $Content | ConvertFrom-Json -ErrorAction Stop
-        }
+        $Data = $Content | ConvertFrom-Json -ErrorAction Stop
         
         # Handle PowerShell's occasional 'value' property wrapping for collections
-        if ($null -ne $Data -and $Data -is [hashtable] -and $Data.ContainsKey("value") -and $Data.ContainsKey("Count")) {
-            return $Data.value
-        }
-        if ($null -ne $Data -and $null -ne $Data.PSObject -and $null -ne $Data.PSObject.Properties["value"] -and $null -ne $Data.PSObject.Properties["Count"]) {
+        if ($null -ne $Data -and $null -ne $Data.PSObject.Properties['value'] -and $null -ne $Data.PSObject.Properties['Count']) {
             return $Data.value
         }
         return $Data
