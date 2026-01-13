@@ -91,15 +91,26 @@ $CurrentVersion = "vDEV"
 # Start background update check
 $UpdateJob = if ($CurrentVersion -ne "vDEV") {
     Start-Job -Name "ArcUpdateCheck" -ScriptBlock {
-        param($Ver)
+        param($Ver, $DataDir)
+        $Result = @{ Script = $null; Data = $null }
         try {
-            $Latest = Invoke-RestMethod -Uri "https://api.github.com/repos/KuroZantetsuken/ARC-Raiders-CLI/releases/latest" -ErrorAction SilentlyContinue
-            if ($Latest.tag_name -and $Latest.tag_name -ne $Ver) {
-                return @{ Version = $Latest.tag_name; Url = $Latest.html_url }
+            # 1. Script Update Check
+            $LatestScript = Invoke-RestMethod -Uri "https://api.github.com/repos/KuroZantetsuken/ARC-Raiders-CLI/releases/latest" -ErrorAction SilentlyContinue
+            if ($LatestScript.tag_name -and $LatestScript.tag_name -ne $Ver) {
+                $Result.Script = @{ Version = $LatestScript.tag_name; Url = $LatestScript.html_url }
+            }
+            
+            # 2. Data Update Check
+            $DataVerFile = Join-Path $DataDir ".version"
+            $CurrentDataVer = if (Test-Path $DataVerFile) { (Get-Content $DataVerFile -Raw).Trim() } else { "" }
+            # Use main branch commit SHA for data versioning
+            $LatestData = Invoke-RestMethod -Uri "https://api.github.com/repos/RaidTheory/arcraiders-data/commits/main" -ErrorAction SilentlyContinue
+            if ($LatestData.sha -and $LatestData.sha -ne $CurrentDataVer) {
+                $Result.Data = @{ Version = $LatestData.sha.Substring(0, 7); FullSha = $LatestData.sha }
             }
         } catch {}
-        return $null
-    } -ArgumentList $CurrentVersion
+        return $Result
+    } -ArgumentList $CurrentVersion, $DataDir
 } else { $null }
 
 
@@ -282,6 +293,30 @@ function Get-WrappedText {
 }
 
 # -----------------------------------------------------------------------------
+# UPDATE SYSTEM
+# -----------------------------------------------------------------------------
+
+function Show-UpdateBanner {
+    param ($UpdateInfo)
+    $Lines = @()
+    
+    if ($UpdateInfo.Script) {
+        $Lines += "CLI Update: $($UpdateInfo.Script.Version)"
+        $Lines += "  URL: $($UpdateInfo.Script.Url)"
+        $Lines += ""
+    }
+    
+    if ($UpdateInfo.Data) {
+        $Lines += "Data Update: $($UpdateInfo.Data.Version)"
+        $Lines += ""
+    }
+    
+    $Lines += "Run 'arc update' to install."
+    
+    Show-Card -Title "UPDATE AVAILABLE" -Content $Lines -ThemeColor $Palette.Warning -BorderColor $Palette.Warning
+}
+
+# -----------------------------------------------------------------------------
 # UI COMPONENTS
 # -----------------------------------------------------------------------------
 
@@ -357,18 +392,6 @@ function Show-Card {
     Write-BoxRow $Sym.Box.BL $Sym.Box.H $Sym.Box.BR $BorderColor $Width
 }
 
-function Show-UpdateBanner {
-    param ($NewVersion, $Url)
-    $DisplayUrl = if ($Url) { $Url } else { "https://github.com/KuroZantetsuken/ARC-Raiders-CLI" }
-    Write-Ansi "`n$DisplayUrl" $Palette.Subtext
-    $Lines = @(
-        "A new update is available: $NewVersion",
-        "Your current version: $CurrentVersion",
-        "",
-        "Run 'arc update' to install it automatically."
-    )
-    Show-Card -Title "UPDATE AVAILABLE" -Content $Lines -ThemeColor $Palette.Warning -BorderColor $Palette.Warning
-}
 
 function Update-ArcRaidersCLI {
     Write-Ansi "Checking for updates..." $Palette.Accent
@@ -1116,12 +1139,23 @@ if ($null -ne $UpdateJob) {
 
     if ($UpdateJob.State -eq "Completed") {
         $UpdateInfo = Receive-Job -Job $UpdateJob
-        if ($UpdateInfo -and $UpdateInfo.Version) {
-            if ($Notified) { Write-Host "" }
-            Show-UpdateBanner -NewVersion $UpdateInfo.Version -Url $UpdateInfo.Url
-        } elseif ($UpdateInfo -is [string]) {
-            if ($Notified) { Write-Host "" }
-            Show-UpdateBanner -NewVersion $UpdateInfo
+        if ($UpdateInfo) {
+            # Re-verify Data version to avoid redundant notices if we just updated during this session (Confirm-Data)
+            if ($UpdateInfo.Data) {
+                $DataVerFile = Join-Path $DataDir ".version"
+                $CurrentDataVer = if (Test-Path $DataVerFile) { (Get-Content $DataVerFile -Raw).Trim() } else { "" }
+                if ($CurrentDataVer -eq $UpdateInfo.Data.FullSha) {
+                    $UpdateInfo.Data = $null
+                }
+            }
+
+            if ($UpdateInfo.Script -or $UpdateInfo.Data) {
+                if ($Notified) { Write-Host "" }
+                Show-UpdateBanner -UpdateInfo $UpdateInfo
+            } elseif ($Notified) {
+                # Clear the "Checking for updates..." line if no update found
+                Write-Host "`r$([char]27)[K" -NoNewline
+            }
         } elseif ($Notified) {
             # Clear the "Checking for updates..." line if no update found
             Write-Host "`r$([char]27)[K" -NoNewline
