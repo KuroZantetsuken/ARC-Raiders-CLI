@@ -1,3 +1,4 @@
 [submodule "arcraiders-data"]
 	path = arcraiders-data
 	url = https://github.com/RaidTheory/arcraiders-data.git
+	branch = main
