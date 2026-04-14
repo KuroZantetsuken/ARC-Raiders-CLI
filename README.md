@@ -24,6 +24,7 @@ This tool searches the database maintained by [RaidTheory/arcraiders-data](https
     - Stash space gained or lost compared to recipe requirements
 - **Event Schedule**: Displays upcoming map events in your local time, color-coded by map.
 - **Interactive Selection**: If multiple results are found, you can quickly select with number keys.
+- **AI Assistant**: Ask natural language questions by ending your query with a `?`. Powered by Google Gemini, the AI can autonomously search and explore game data to answer complex questions.
 - **Automatic Updates**: Performs background checks and notifies you when new data or script updates are available.
 
 ## PowerToys Run
@@ -59,11 +60,12 @@ If you find any bugs or have any suggestions, please don't hesitate to open an i
 Run `arc` followed by your search query.
 
 ```powershell
-arc cat          # List data matching "Cat"
-arc cat 0        # Immediately display the first result for "Cat"
-arc cat bed      # Multi-word searches work without quotes
-arc events       # View the map event schedule
-arc update       # Check for and install software updates
+arc cat                      # List data matching "Cat"
+arc cat 0                    # Immediately display the first result for "Cat"
+arc cat bed                  # Multi-word searches work without quotes
+arc events                   # View the map event schedule
+arc update                   # Check for and install software updates
+arc "where to find bobcats?" # Ask a question to the AI assistant
 ```
 
 - **Selection**: Press `0`-`9` to select from multiple results.
